@@ -7,8 +7,10 @@ using Eto.Forms;
 using Eto.Drawing;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics; // Needed for Process.Start
 using System.Linq;
 using System.Runtime.InteropServices;
+using Rhino.UI.Controls;
 
 namespace MyProject
 {
@@ -33,16 +35,45 @@ namespace MyProject
         };
 
         // UI elements updated dynamically
+        private Label _volumeDescriptionLabel;
         private Label _volumeValueLabel;
 
         public MyProjectPanel(uint documentSerialNumber)
         {
+            // Create a bold font for section titles
+            var defaultFont = Eto.Drawing.SystemFonts.Default();
+            var boldFont = new Eto.Drawing.Font(defaultFont.Family, defaultFont.Size, Eto.Drawing.FontStyle.Bold);
+
             // ===== Top section: buttons =====
             var btnPickPoint = new Button { Text = "Pick Point", Command = new PickPointCommand() };
             var btnDrawRect = new Button { Text = "Draw Rectangle", Command = new DrawRectangleCommand() };
 
+            var btnStructure = new Button { Text = "str-ucture" };
+            btnStructure.Click += (s, e) =>
+            {
+                var url = "http://www.str-ucture.com";
+                try
+                {
+                    Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+                }
+                catch (Exception ex)
+                {
+                    RhinoApp.WriteLine($"Error opening website: {ex.Message}");
+                }
+            };
+
+            // UPDATED: Use a horizontal StackLayout for the buttons to control spacing
+            var buttonLayout = new StackLayout
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 5, // This adds a 5-pixel gap between each button
+                Items = { btnPickPoint, btnDrawRect, btnStructure }
+            };
+
             var upperLayout = new DynamicLayout { Spacing = new Size(6, 6), Padding = new Padding(10) };
-            upperLayout.AddSeparateRow(btnPickPoint, btnDrawRect, null);
+            upperLayout.AddRow(new Label { Text = "The Buttons", Font = boldFont });
+            // UPDATED: Add the new button layout to the panel
+            upperLayout.AddRow(buttonLayout);
             upperLayout.Add(null); // spacer
 
             // ===== Middle (second) section: dropdown =====
@@ -66,22 +97,24 @@ namespace MyProject
             };
 
             var middleLayout = new DynamicLayout { Spacing = new Size(6, 6), Padding = new Padding(10) };
-            // Divider between top and middle
-            middleLayout.AddRow(new Panel { BackgroundColor = Color.FromGrayscale(0.85f), Height = 1 });
+            middleLayout.AddRow(new Divider());
+            middleLayout.AddRow(new Label { Text = "The Dropdown", Font = boldFont });
             middleLayout.AddRow(new Label { Text = "Select Material:" }, dropdown);
             middleLayout.Add(null); // spacer
 
             // ===== Bottom (third) section: selection info (volume) =====
             _volumeValueLabel = new Label
             {
-                Text = "Select one closed solid to display volume.",
+                Text = "Select one or more closed solids to display volume.",
                 TextColor = Color.FromGrayscale(0.45f)
             };
 
+            _volumeDescriptionLabel = new Label { Text = "Selected Object Volume:" };
+
             var bottomLayout = new DynamicLayout { Spacing = new Size(6, 6), Padding = new Padding(10) };
-            // Divider between middle and bottom
-            bottomLayout.AddRow(new Panel { BackgroundColor = Color.FromGrayscale(0.85f), Height = 1 });
-            bottomLayout.AddRow(new Label { Text = "Selected Object Volume:" });
+            bottomLayout.AddRow(new Divider());
+            bottomLayout.AddRow(new Label { Text = "The Calculation", Font = boldFont });
+            bottomLayout.AddRow(_volumeDescriptionLabel);
             bottomLayout.AddRow(_volumeValueLabel);
             bottomLayout.Add(null); // spacer
 
@@ -100,13 +133,13 @@ namespace MyProject
                 Panel1 = upperLayout,
                 Panel2 = lowerContainer,
                 FixedPanel = SplitterFixedPanel.Panel1,
-                Position = 120
+                Position = 140
             };
 
             Content = splitter;
             Size = new Size(440, 600);
 
-            // ---- Rhino document event hooks (use API names available across versions) ----
+            // ---- Rhino document event hooks ----
             RhinoDoc.SelectObjects += OnSelectObjects;
             RhinoDoc.DeselectObjects += OnDeselectObjects;
             RhinoDoc.DeselectAllObjects += OnDeselectAllObjects;
@@ -131,14 +164,13 @@ namespace MyProject
             base.Dispose(disposing);
         }
 
-        // ---- Event handlers matching RhinoCommon delegate signatures ----
+        // ---- Event handlers ----
         private void OnSelectObjects(object sender, RhinoObjectSelectionEventArgs e) => UpdateSelectedObjectVolume();
         private void OnDeselectObjects(object sender, RhinoObjectSelectionEventArgs e) => UpdateSelectedObjectVolume();
         private void OnDeselectAllObjects(object sender, RhinoDeselectAllObjectsEventArgs e) => UpdateSelectedObjectVolume();
         private void OnAddOrDeleteObject(object sender, RhinoObjectEventArgs e) => UpdateSelectedObjectVolume();
         private void OnReplaceObject(object sender, RhinoReplaceObjectEventArgs e) => UpdateSelectedObjectVolume();
 
-        // --- Compute & show volume for exactly one selected, closed, volumetric object ---
         private void UpdateSelectedObjectVolume()
         {
             var doc = RhinoDoc.ActiveDoc;
@@ -148,32 +180,63 @@ namespace MyProject
                 return;
             }
 
-            // Use the overload commonly available: GetSelectedObjects(bool includeLights, bool includeGrips)
-            var selected = doc.Objects.GetSelectedObjects(false, false).ToArray();
+            var selectedObjects = doc.Objects.GetSelectedObjects(false, false).ToList();
+            var selectionCount = selectedObjects.Count;
 
-            if (selected.Length == 0)
+            var unitAbbreviation = Rhino.UI.Localization.UnitSystemName(doc.ModelUnitSystem, false, true, true);
+
+            // Case 0: Nothing selected
+            if (selectionCount == 0)
             {
+                _volumeDescriptionLabel.Text = "Selected Object Volume:";
                 SetVolumeLabel("Nothing selected.", isInfo: true);
                 return;
             }
 
-            if (selected.Length > 1)
+            // Case 1: Exactly one object is selected
+            if (selectionCount == 1)
             {
-                SetVolumeLabel("Multiple objects selected. Select one closed solid to view volume.", isInfo: true);
+                _volumeDescriptionLabel.Text = "Selected Object Volume:";
+                var rhinoObject = selectedObjects[0];
+                if (TryComputeVolume(rhinoObject.Geometry, out double volumeValue))
+                {
+                    _volumeValueLabel.TextColor = Colors.Black;
+                    _volumeValueLabel.Text = $"{volumeValue:0.###} {unitAbbreviation}³";
+                }
+                else
+                {
+                    SetVolumeLabel("Selected object has no closed volume.", isInfo: true);
+                }
                 return;
             }
 
-            var ro = selected[0];
-            if (!TryComputeVolume(ro.Geometry, out var volumeValue))
+            // Case 2: Multiple objects are selected
+            if (selectionCount > 1)
             {
-                SetVolumeLabel("Selected object has no closed volume.", isInfo: true);
-                return;
-            }
+                double totalVolume = 0.0;
+                int solidObjectCount = 0;
 
-            // Format with document units
-            var unitName = doc.ModelUnitSystem.ToString(); // e.g., Millimeters, Meters, Feet
-            _volumeValueLabel.TextColor = Colors.Black;
-            _volumeValueLabel.Text = $"{volumeValue:0.###} {unitName}³";
+                foreach (var rhinoObject in selectedObjects)
+                {
+                    if (TryComputeVolume(rhinoObject.Geometry, out double volumeValue))
+                    {
+                        totalVolume += volumeValue;
+                        solidObjectCount++;
+                    }
+                }
+
+                if (solidObjectCount > 0)
+                {
+                    _volumeDescriptionLabel.Text = $"Total Volume ({solidObjectCount} Objects):";
+                    _volumeValueLabel.TextColor = Colors.Black;
+                    _volumeValueLabel.Text = $"{totalVolume:0.###} {unitAbbreviation}³";
+                }
+                else
+                {
+                    _volumeDescriptionLabel.Text = "Selected Object Volume:";
+                    SetVolumeLabel("Selected objects have no closed volume.", isInfo: true);
+                }
+            }
         }
 
         private void SetVolumeLabel(string message, bool isInfo)
@@ -182,7 +245,7 @@ namespace MyProject
             _volumeValueLabel.TextColor = isInfo ? Color.FromGrayscale(0.45f) : Colors.Black;
         }
 
-        // --- Volume helpers (use widely available RhinoCommon calls) ---
+        // --- Volume helpers (unchanged) ---
         private bool TryComputeVolume(GeometryBase geo, out double volume)
         {
             volume = 0.0;
@@ -223,7 +286,6 @@ namespace MyProject
                         }
 
                     default:
-                        // Try generic conversion to Brep (covers many cases)
                         var asBrep = Brep.TryConvertBrep(geo);
                         if (asBrep != null && asBrep.IsSolid)
                         {
