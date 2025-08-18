@@ -1,12 +1,28 @@
-﻿str-material,ref. quantity,ref. unit,LCA
-best wood BSH,1,m3,253.00
-best wood CLT,1,m3,257.00
-best wood CLT BOX,1,m3,252.00
-Beton der Druckfestigkeitsklasse C35/45,1,m3,220.00
-Beton-Pflastersteine mit bis zu 40 % Recyclinganteil,1,kg,274.00
-Betonstahl in Ringen und Betonstabstahl,1,kg,226.00
-Betonstahlmatten und Gitterträger,1,kg,283.00
-Brettschichtholz - Standardformen (Durchschnitt DE),1,m3,262.00
-Brettsperrholz (Durchschnitt DE),1,m3,213.00
-Furnierschichtholz (generisch),1,m3,268.00
-Kalksandstein,1,m2,249.00
+﻿MaterialName,ReferenceQuantity,ReferenceUnit,LCA
+Aluminium Profil,1,kg,10.89692718
+Baustahl: Profile und Stabstahl,1000,kg,560.2874153
+best wood BSH,1,m3,-554.3466891
+best wood CLT,1,m3,-505.4113224
+best wood CLT BOX,1,m3,-243.7720227
+best wood FIBRE,1,kg,-1.296883157
+best wood FLEX 50,1,m3,-50.25408415
+best wood Holzfaser-Dämmplatten,1,m3,-173.7050221
+Beton der Druckfestigkeitsklasse C35/45,1,m3,220
+Beton der Druckfestigkeitsklasse C50/60,1,m3,275
+Brettschichtholz - Sonderformen (Durchschnitt DE),1,m3,-663.3263438
+Brettschichtholz - Standardformen (Durchschnitt DE),1,m3,-668.1830869
+Brettsperrholz,1,m3,-641.6644473
+Brettsperrholz (Durchschnitt DE),1,m3,-669.6155057
+Kalksandstein,1,m3,311.6984013
+Rollladen,1,qm,54.07726541
+Rollladen Kunststoff,1,qm,23.27069383
+Rolltor,1,qm,107.515631
+"Stahl Feinblech (0,3-3,0mm)",1,kg,2.419417659
+Stahl Feinblech (20µm bandverzinkt),1,kg,2.744185552
+Stahl Schmiedebauteil,1,kg,2.749666632
+Steinzeugrohre DN 250,1,m,27.08146495
+Steinzeugrohre DN 400,1,m,53.2245151
+Zement,1000,kg,493
+"Zement (CEM II 32,5)",1,kg,0.805025015
+"Zement (CEM II 42,5)",1,kg,0.81622115
+"Zement (CEM II 52,5)",1,kg,0.830575168

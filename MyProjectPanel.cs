@@ -35,27 +35,36 @@ namespace MyProject
         private bool _isSyncingSelection = false;
         private bool _needsRefresh = false;
 
+        private readonly Dictionary<Guid, double> _quantityMultipliers = new Dictionary<Guid, double>();
 
         private class UserTextEntry
         {
             public string SerialNumber { get; set; }
             public string IfcClass { get; set; }
-            public string Value { get; set; }
+            public string Value { get; set; } // Material Name
             public double ReferenceQuantity { get; set; }
             public string ReferenceUnit { get; set; }
+            public double ReferenceLca { get; set; }
             public string DisplayReference => !string.IsNullOrWhiteSpace(ReferenceUnit) ? $"{ReferenceQuantity:0.00} {ReferenceUnit}" : "N/A";
             public int Count { get; set; }
             public double Quantity { get; set; }
+            public string QuantityUnit { get; set; }
+            public string DisplayQuantity => !string.IsNullOrWhiteSpace(QuantityUnit) ? $"{Quantity:0.00} {QuantityUnit}" : "N/A";
+            public string QuantityType { get; set; }
+            public double QuantityMultiplier { get; set; } = 1.0;
+            public double QuantityTotal => Quantity * QuantityMultiplier;
             public double Lca { get; set; }
             public List<Guid> ObjectIds { get; set; } = new List<Guid>();
         }
 
         private readonly GridView<UserTextEntry> _userTextGridView;
+        private readonly Button _btnColumns;
+        private readonly GridColumn _qtyMultiplierColumn;
 
         public MyProjectPanel(uint documentSerialNumber)
         {
             _materialLcaData = CsvReader.ReadMaterialLcaDataFromResource("MyProject.Resources.materialListWithUnits.csv");
-            _ifcClasses = new List<string> { "Wall", "Slab", "Beam", "Column", "Roof", "Stair", "Ramp", "Door", "Window", "Railing", "Covering" };
+            _ifcClasses = new List<string> { "Wall", "Slab", "Beam", "Column", "Foundation", "Roof", "Stair", "Ramp", "Door", "Window", "Railing", "Covering" };
 
             Styles.Add<Label>("bold_label", label => label.Font = SystemFonts.Bold());
 
@@ -71,11 +80,14 @@ namespace MyProject
             var btnSelectUnassigned = new Button { Text = "Select Unassigned" };
             btnSelectUnassigned.Click += OnSelectUnassignedClick;
 
+            _btnColumns = new Button { Text = "Columns" };
+            _btnColumns.Click += OnColumnsButtonClick;
+
             var buttonLayout = new StackLayout
             {
                 Orientation = Orientation.Horizontal,
                 Spacing = 5,
-                Items = { btnSelectUnassigned, btnStructure }
+                Items = { btnSelectUnassigned, _btnColumns, btnStructure }
             };
 
             var upperLayout = new DynamicLayout { Spacing = new Size(6, 6), Padding = new Padding(10) };
@@ -85,7 +97,8 @@ namespace MyProject
             #endregion
 
             #region IFC Class Layout
-            var ifcDropdown = new ComboBox();
+            // MODIFIED: Added AutoComplete = true to enable filtering
+            var ifcDropdown = new ComboBox { Width = 180, AutoComplete = true };
             ifcDropdown.Items.Add(new ListItem { Text = "" });
             foreach (var cls in _ifcClasses) ifcDropdown.Items.Add(new ListItem { Text = cls });
 
@@ -116,7 +129,8 @@ namespace MyProject
             #endregion
 
             #region Material Definition Layout
-            var materialDropdown = new ComboBox();
+            // MODIFIED: Added AutoComplete = true to enable filtering
+            var materialDropdown = new ComboBox { Width = 180, AutoComplete = true };
             materialDropdown.Items.Add(new ListItem { Text = "" });
             foreach (var m in _materialLcaData.Keys) materialDropdown.Items.Add(new ListItem { Text = m });
 
@@ -150,37 +164,66 @@ namespace MyProject
             #region GridView and Data Layout
             _userTextGridView = new GridView<UserTextEntry>
             {
-                ShowHeader = true,tes
-                AllowMultipleSelection = true,
-                Columns =
-                {
-                    new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.SerialNumber)), HeaderText = "SN", Editable = false, Width = 30 },
-                    new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.IfcClass)), HeaderText = "IfcClass", Editable = false, Width = 70 },
-                    new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.Value)), HeaderText = "Material (Name)", Editable = false, Width = 140 },
-                    new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.DisplayReference)), HeaderText = "Ref. Quantity", Editable = false, Width = 80 },
-                    new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.Count)), HeaderText = "Count", Editable = false, Width = 50 },
-                    new GridColumn { DataCell = new TextBoxCell { Binding = Binding.Property<UserTextEntry, string>(entry => $"{entry.Quantity:0.00}") }, HeaderText = "Quantity", Editable = false, Width = 75 },
-                    new GridColumn { DataCell = new TextBoxCell { Binding = Binding.Property<UserTextEntry, string>(entry => $"{entry.Lca:0.00}") }, HeaderText = "LCA (kgCO2 eq)", Editable = false, Width = 100 }
-                }
+                ShowHeader = true,
+                AllowMultipleSelection = true
             };
-            _userTextGridView.SelectionChanged += OnGridSelectionChanged;
 
-            _showAllObjectsCheckBox = new CheckBox { Text = "Show All (Visible)", Checked = true };
+            var columns = new List<GridColumn>
+            {
+                // First 3 columns use default (left) alignment
+                new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.SerialNumber)), HeaderText = "SN", Editable = false, Width = 30 },
+                new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.IfcClass)), HeaderText = "IfcClass", Editable = false, Width = 60 },
+                new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.Value)), HeaderText = "Material (Name)", Editable = false, Width = 150 },
+                
+                // The following columns now have their text aligned to the right.
+                new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.DisplayReference)) { TextAlignment = TextAlignment.Right }, HeaderText = "Ref. Qty.", Editable = false, Width = 70 },
+                new GridColumn { DataCell = new TextBoxCell { Binding = Binding.Property<UserTextEntry, string>(entry => $"{entry.ReferenceLca:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "Ref. LCA", Editable = false, Width = 70 },
+                new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.Count)) { TextAlignment = TextAlignment.Right }, HeaderText = "Count", Editable = false, Width = 50 },
+                new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.DisplayQuantity)) { TextAlignment = TextAlignment.Right }, HeaderText = "Qty. (Rh)", Editable = false, Width = 75 }
+            };
+
+            // These columns also have their text aligned to the right.
+            _qtyMultiplierColumn = new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.QuantityMultiplier)) { TextAlignment = TextAlignment.Right }, HeaderText = "Qty. Multiplier", Editable = true, Width = 90 };
+            var qtyTotalColumn = new GridColumn { DataCell = new TextBoxCell { Binding = Binding.Property<UserTextEntry, string>(entry => $"{entry.QuantityTotal:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "Qty. Total", Editable = false, Width = 75 };
+
+            columns.Add(_qtyMultiplierColumn);
+            columns.Add(qtyTotalColumn);
+
+            // This column also has its text aligned to the right.
+            columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Binding.Property<UserTextEntry, string>(entry => $"{entry.Lca:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "LCA (kgCO2 eq)", Editable = false, Width = 100 });
+
+            // Add all defined columns to the grid view.
+            foreach (var col in columns)
+            {
+                _userTextGridView.Columns.Add(col);
+            }
+
+            _userTextGridView.Width = 550;
+
+            _userTextGridView.SelectionChanged += OnGridSelectionChanged;
+            _userTextGridView.CellEdited += OnGridCellEdited;
+
+
+            _showAllObjectsCheckBox = new CheckBox { Text = "Show All/Selected", Checked = true };
             _showAllObjectsCheckBox.CheckedChanged += (s, e) => UpdatePanelData();
 
             _showUnassignedCheckBox = new CheckBox { Text = "Show/Hide Unassigned", Checked = true };
             _showUnassignedCheckBox.CheckedChanged += (s, e) => UpdatePanelData();
 
             _groupByMaterialCheckBox = new CheckBox { Text = "Group by Material", Checked = false };
-            _groupByClassCheckBox = new CheckBox { Text = "Group by Class", Checked = false };
+            _groupByClassCheckBox = new CheckBox { Text = "Group by Class", Checked = true };
             _aggregateCheckBox = new CheckBox { Text = "Aggregate", Checked = false };
-            _aggregateCheckBox.CheckedChanged += (s, e) => UpdatePanelData();
 
-            _groupByMaterialCheckBox.CheckedChanged += (s, e) =>
+            _aggregateCheckBox.CheckedChanged += (s, e) =>
             {
-                if (_groupByMaterialCheckBox.Checked == true) _groupByClassCheckBox.Checked = false;
+                _qtyMultiplierColumn.Visible = !_aggregateCheckBox.Checked ?? true;
                 UpdatePanelData();
             };
+
+            _qtyMultiplierColumn.Visible = !_aggregateCheckBox.Checked ?? true;
+
+
+            _groupByMaterialCheckBox.CheckedChanged += OnGroupByMaterialChanged;
             _groupByClassCheckBox.CheckedChanged += (s, e) =>
             {
                 if (_groupByClassCheckBox.Checked == true) _groupByMaterialCheckBox.Checked = false;
@@ -190,7 +233,7 @@ namespace MyProject
             var scrollableGrid = new Scrollable
             {
                 Content = _userTextGridView,
-                Height = 200
+                Height = 280
             };
 
             var viewOptionsLayout = new StackLayout
@@ -215,9 +258,12 @@ namespace MyProject
 
             _totalLcaLabel = new Label { Text = "Total LCA: 0.00", Style = "bold_label" };
 
+            var gridHeaderLayout = new DynamicLayout();
+            gridHeaderLayout.AddRow(new Label { Text = "Attribute User Text", Style = "bold_label" }, null, _btnColumns);
+
             var userTextLayout = new DynamicLayout { Spacing = new Size(6, 6), Padding = new Padding(10) };
             userTextLayout.AddRow(new Divider());
-            userTextLayout.AddRow(new Label { Text = "Attribute User Text", Style = "bold_label" });
+            userTextLayout.AddRow(gridHeaderLayout);
             userTextLayout.AddRow(checkBoxLayout);
             userTextLayout.AddRow(scrollableGrid);
             userTextLayout.AddRow(_totalLcaLabel, null);
@@ -229,9 +275,8 @@ namespace MyProject
             var splitter = new Splitter { Orientation = Orientation.Vertical, Panel1 = upperLayout, Panel2 = lowerContainer, FixedPanel = SplitterFixedPanel.Panel1, Position = 70 };
 
             Content = splitter;
-            MinimumSize = new Size(400, 500);
+            MinimumSize = new Size(400, 5500);
 
-            // --- Register event handlers ---
             RhinoDoc.SelectObjects += OnSelectionChanged;
             RhinoDoc.DeselectObjects += OnSelectionChanged;
             RhinoDoc.DeselectAllObjects += OnDeselectAllObjects;
@@ -239,18 +284,76 @@ namespace MyProject
             RhinoDoc.DeleteRhinoObject += OnDatabaseChanged;
             RhinoDoc.ReplaceRhinoObject += OnReplaceObject;
             RhinoDoc.UserStringChanged += OnUserStringChanged;
-
             RhinoDoc.EndOpenDocument += OnDocumentChanged;
             RhinoDoc.NewDocument += OnDocumentChanged;
-
             RhinoApp.Idle += OnRhinoIdle;
-
 
             UpdatePanelData();
             #endregion
         }
 
         #region Event Handlers
+
+        private void OnGridCellEdited(object sender, GridViewCellEventArgs e)
+        {
+            if (e.Item is UserTextEntry entry && entry.ObjectIds.Any())
+            {
+                var objectId = entry.ObjectIds.First();
+                _quantityMultipliers[objectId] = entry.QuantityMultiplier;
+                UpdatePanelData();
+            }
+        }
+
+        private void OnColumnsButtonClick(object sender, EventArgs e)
+        {
+            var dialog = new ColumnVisibilityDialog(_userTextGridView);
+            dialog.ShowModal(this);
+        }
+
+        private void OnGroupByMaterialChanged(object sender, EventArgs e)
+        {
+            if (_groupByMaterialCheckBox.Checked == true)
+            {
+                _groupByClassCheckBox.Checked = false;
+
+                int ifcClassIndex = -1;
+                int materialNameIndex = -1;
+
+                for (int i = 0; i < _userTextGridView.Columns.Count; i++)
+                {
+                    if (_userTextGridView.Columns[i].HeaderText == "IfcClass") ifcClassIndex = i;
+                    if (_userTextGridView.Columns[i].HeaderText == "Material (Name)") materialNameIndex = i;
+                }
+
+                if (ifcClassIndex != -1 && materialNameIndex != -1 && ifcClassIndex < materialNameIndex)
+                {
+                    var ifcColumn = _userTextGridView.Columns[ifcClassIndex];
+                    _userTextGridView.Columns.RemoveAt(ifcClassIndex);
+                    _userTextGridView.Columns.Insert(materialNameIndex, ifcColumn);
+                }
+            }
+            else
+            {
+                int ifcClassIndex = -1;
+                int materialNameIndex = -1;
+
+                for (int i = 0; i < _userTextGridView.Columns.Count; i++)
+                {
+                    if (_userTextGridView.Columns[i].HeaderText == "IfcClass") ifcClassIndex = i;
+                    if (_userTextGridView.Columns[i].HeaderText == "Material (Name)") materialNameIndex = i;
+                }
+
+                if (ifcClassIndex != -1 && materialNameIndex != -1 && ifcClassIndex > materialNameIndex)
+                {
+                    var ifcColumn = _userTextGridView.Columns[ifcClassIndex];
+                    _userTextGridView.Columns.RemoveAt(ifcClassIndex);
+                    _userTextGridView.Columns.Insert(materialNameIndex, ifcColumn);
+                }
+            }
+
+            UpdatePanelData();
+        }
+
         private void OnRhinoIdle(object sender, EventArgs e)
         {
             if (_needsRefresh)
@@ -262,6 +365,7 @@ namespace MyProject
 
         private void OnDocumentChanged(object sender, EventArgs e)
         {
+            _quantityMultipliers.Clear();
             _needsRefresh = true;
         }
 
@@ -312,10 +416,7 @@ namespace MyProject
                 {
                     var newAttributes = rhinoObject.Attributes.Duplicate();
                     newAttributes.DeleteUserString("str-ifcclass");
-                    if (doc.Objects.ModifyAttributes(rhinoObject.Id, newAttributes, false))
-                    {
-                        updatedCount++;
-                    }
+                    if (doc.Objects.ModifyAttributes(rhinoObject.Id, newAttributes, false)) updatedCount++;
                 }
             }
 
@@ -349,10 +450,7 @@ namespace MyProject
                 {
                     var newAttributes = rhinoObject.Attributes.Duplicate();
                     newAttributes.DeleteUserString("str-material");
-                    if (doc.Objects.ModifyAttributes(rhinoObject.Id, newAttributes, false))
-                    {
-                        updatedCount++;
-                    }
+                    if (doc.Objects.ModifyAttributes(rhinoObject.Id, newAttributes, false)) updatedCount++;
                 }
             }
 
@@ -407,7 +505,7 @@ namespace MyProject
                 var allIdsInGrid = _userTextGridView.DataStore.SelectMany(entry => entry.ObjectIds).Distinct();
                 foreach (var objId in allIdsInGrid)
                 {
-                    doc.Objects.Select(objId, idsThatShouldBeSelected.Contains(objId), true, true);
+                    doc.Objects.Select(objId, idsThatShouldBeSelected.Contains(objId));
                 }
                 doc.Views.Redraw();
             }
@@ -464,8 +562,8 @@ namespace MyProject
             RhinoDoc.DeleteRhinoObject -= OnDatabaseChanged;
             RhinoDoc.ReplaceRhinoObject -= OnReplaceObject;
             RhinoDoc.UserStringChanged -= OnUserStringChanged;
-            RhinoDoc.EndOpenDocument += OnDocumentChanged;
-            RhinoDoc.NewDocument += OnDocumentChanged;
+            RhinoDoc.EndOpenDocument -= OnDocumentChanged;
+            RhinoDoc.NewDocument -= OnDocumentChanged;
             RhinoApp.Idle -= OnRhinoIdle;
 
             base.Dispose(disposing);
@@ -477,10 +575,7 @@ namespace MyProject
         private void OnReplaceObject(object sender, RhinoReplaceObjectEventArgs e) { if (!_isSyncingSelection) UpdatePanelData(); }
         private void OnUserStringChanged(object sender, RhinoDoc.UserStringChangedArgs e) { if (!_isSyncingSelection) UpdatePanelData(); }
 
-        private void UpdatePanelData()
-        {
-            Eto.Forms.Application.Instance.AsyncInvoke(UpdateUserTextGrid);
-        }
+        private void UpdatePanelData() => Eto.Forms.Application.Instance.AsyncInvoke(UpdateUserTextGrid);
 
         private void UpdateUserTextGrid()
         {
@@ -509,22 +604,35 @@ namespace MyProject
             if (aggregate)
             {
                 #region Aggregated View Logic
-                IEnumerable<UserTextEntry> aggregatedData = objectsList
-                    .GroupBy(o => (
-                        Material: o.Attributes.GetUserString("str-material") ?? "N/A",
-                        IfcClass: o.Attributes.GetUserString("str-ifcclass") ?? "N/A"))
+                var preProcessedObjects = objectsList.Select(o => {
+                    TryComputeQuantity(o.Geometry, doc, out double qty, out string unit, out string qtyType);
+                    return new
+                    {
+                        RhinoObject = o,
+                        Material = o.Attributes.GetUserString("str-material") ?? "N/A",
+                        IfcClass = o.Attributes.GetUserString("str-ifcclass") ?? "N/A",
+                        Quantity = qty,
+                        QuantityUnit = unit,
+                        QuantityType = qtyType
+                    };
+                }).ToList();
+
+                var aggregatedData = preProcessedObjects
+                    .GroupBy(p => (p.Material, p.IfcClass, p.QuantityType))
                     .Select(g =>
                     {
-                        double totalVolume = g.Sum(obj => { TryComputeVolume(obj.Geometry, out double v); return v; });
+                        double totalQuantity = g.Sum(p => p.Quantity);
                         double totalLca = 0.0;
                         double refQuantity = 0.0;
                         string refUnit = "";
+                        double refLca = 0.0;
 
-                        if (_materialLcaData.TryGetValue(g.Key.Material, out MaterialData materialData))
+                        if (g.Key.QuantityType != "N/A" && _materialLcaData.TryGetValue(g.Key.Material, out MaterialData materialData))
                         {
-                            totalLca = totalVolume * materialData.Lca;
+                            totalLca = totalQuantity * materialData.Lca;
                             refQuantity = materialData.ReferenceQuantity;
                             refUnit = materialData.ReferenceUnit;
+                            refLca = materialData.Lca;
                         }
 
                         return new UserTextEntry
@@ -533,33 +641,28 @@ namespace MyProject
                             IfcClass = g.Key.IfcClass,
                             ReferenceQuantity = refQuantity,
                             ReferenceUnit = refUnit,
+                            ReferenceLca = refLca,
                             Count = g.Count(),
-                            Quantity = totalVolume,
+                            Quantity = totalQuantity,
+                            QuantityUnit = g.First().QuantityUnit,
+                            QuantityType = g.Key.QuantityType,
                             Lca = totalLca,
-                            ObjectIds = g.Select(obj => obj.Id).ToList()
+                            ObjectIds = g.Select(p => p.RhinoObject.Id).ToList()
                         };
                     });
 
                 IEnumerable<UserTextEntry> sortedData;
                 if (groupByClass)
                 {
-                    sortedData = aggregatedData
-                        .OrderBy(d => d.IfcClass == "N/A")
-                        .ThenBy(d => d.IfcClass)
-                        .ThenBy(d => d.Value);
+                    sortedData = aggregatedData.OrderBy(d => d.IfcClass == "N/A").ThenBy(d => d.IfcClass).ThenBy(d => d.Value);
                 }
                 else if (groupByMaterial)
                 {
-                    sortedData = aggregatedData
-                        .OrderBy(d => d.Value == "N/A")
-                        .ThenBy(d => d.Value)
-                        .ThenBy(d => d.IfcClass);
+                    sortedData = aggregatedData.OrderBy(d => d.Value == "N/A").ThenBy(d => d.Value).ThenBy(d => d.IfcClass);
                 }
                 else
                 {
-                    sortedData = aggregatedData
-                        .OrderBy(d => d.Value == "N/A")
-                        .ThenBy(d => d.Value);
+                    sortedData = aggregatedData.OrderBy(d => d.Value == "N/A").ThenBy(d => d.Value);
                 }
 
                 gridData = FormatDataForHierarchy(sortedData.ToList(), groupByClass, groupByMaterial);
@@ -570,17 +673,27 @@ namespace MyProject
                 #region Non-Aggregated View Logic
                 var processedObjects = objectsList.Select(obj =>
                 {
-                    TryComputeVolume(obj.Geometry, out double volume);
+                    TryComputeQuantity(obj.Geometry, doc, out double quantity, out string unit, out string quantityType);
+
                     string materialName = obj.Attributes.GetUserString("str-material") ?? "N/A";
                     double lca = 0.0;
                     double refQuantity = 0.0;
                     string refUnit = "";
+                    double refLca = 0.0;
+
+                    _quantityMultipliers.TryGetValue(obj.Id, out double multiplier);
+                    if (multiplier < 1e-9) multiplier = 1.0;
 
                     if (_materialLcaData.TryGetValue(materialName, out MaterialData materialData))
                     {
-                        lca = volume * materialData.Lca;
                         refQuantity = materialData.ReferenceQuantity;
                         refUnit = materialData.ReferenceUnit;
+                        refLca = materialData.Lca;
+
+                        if (quantityType != "N/A")
+                        {
+                            lca = (quantity * multiplier) * materialData.Lca;
+                        }
                     }
 
                     return new UserTextEntry
@@ -589,8 +702,12 @@ namespace MyProject
                         IfcClass = obj.Attributes.GetUserString("str-ifcclass") ?? "N/A",
                         ReferenceQuantity = refQuantity,
                         ReferenceUnit = refUnit,
+                        ReferenceLca = refLca,
                         Count = 1,
-                        Quantity = volume,
+                        Quantity = quantity,
+                        QuantityUnit = unit,
+                        QuantityType = quantityType,
+                        QuantityMultiplier = multiplier,
                         Lca = lca,
                         ObjectIds = new List<Guid> { obj.Id }
                     };
@@ -599,24 +716,15 @@ namespace MyProject
                 IEnumerable<UserTextEntry> sortedData;
                 if (groupByClass)
                 {
-                    sortedData = processedObjects
-                        .OrderBy(d => d.IfcClass == "N/A")
-                        .ThenBy(d => d.IfcClass)
-                        .ThenBy(d => d.Value);
+                    sortedData = processedObjects.OrderBy(d => d.IfcClass == "N/A").ThenBy(d => d.IfcClass).ThenBy(d => d.Value);
                 }
                 else if (groupByMaterial)
                 {
-                    sortedData = processedObjects
-                        .OrderBy(d => d.Value == "N/A")
-                        .ThenBy(d => d.Value)
-                        .ThenBy(d => d.IfcClass);
+                    sortedData = processedObjects.OrderBy(d => d.Value == "N/A").ThenBy(d => d.Value).ThenBy(d => d.IfcClass);
                 }
                 else
                 {
-                    sortedData = processedObjects
-                        .OrderBy(d => d.Value == "N/A")
-                        .ThenBy(d => d.Value)
-                        .ThenBy(d => d.IfcClass);
+                    sortedData = processedObjects.OrderBy(d => d.Value == "N/A").ThenBy(d => d.Value).ThenBy(d => d.IfcClass);
                 }
                 gridData = FormatDataForHierarchy(sortedData.ToList(), groupByClass, groupByMaterial);
                 #endregion
@@ -630,7 +738,6 @@ namespace MyProject
 
             _userTextGridView.DataStore = finalData;
             _totalLcaLabel.Text = $"Total LCA: {finalData.Sum(entry => entry.Lca):0.00} kgCO2 eq";
-
             _userTextGridView.Invalidate();
 
             try
@@ -650,7 +757,8 @@ namespace MyProject
                         rowsToSelect.Add(i);
                     }
                 }
-                _userTextGridView.SelectedRows = rowsToSelect;
+                if (rowsToSelect.Any()) _userTextGridView.SelectedRows = rowsToSelect;
+                else _userTextGridView.UnselectAll();
             }
             finally
             {
@@ -667,31 +775,15 @@ namespace MyProject
             foreach (var item in sortedData)
             {
                 string currentPrimaryGroup = "N/A";
-                if (groupByClass)
-                {
-                    currentPrimaryGroup = item.IfcClass;
-                }
-                else if (groupByMaterial)
-                {
-                    currentPrimaryGroup = item.Value;
-                }
-                else
-                {
-                    currentPrimaryGroup = sn.ToString();
-                }
+                if (groupByClass) currentPrimaryGroup = item.IfcClass;
+                else if (groupByMaterial) currentPrimaryGroup = item.Value;
+                else currentPrimaryGroup = sn.ToString();
 
                 bool isFirstInGroup = currentPrimaryGroup != lastPrimaryGroup;
                 item.SerialNumber = isFirstInGroup ? $"{sn++}." : "";
 
-                if (groupByClass && !isFirstInGroup)
-                {
-                    item.IfcClass = "";
-                }
-
-                if (groupByMaterial && !isFirstInGroup)
-                {
-                    item.Value = "";
-                }
+                if (groupByClass && !isFirstInGroup) item.IfcClass = "";
+                if (groupByMaterial && !isFirstInGroup) item.Value = "";
 
                 formattedList.Add(item);
                 lastPrimaryGroup = currentPrimaryGroup;
@@ -699,34 +791,74 @@ namespace MyProject
             return formattedList;
         }
 
-        private bool TryComputeVolume(GeometryBase geo, out double volume)
+        private string GetUnitType(string unit)
         {
-            volume = 0.0;
-            if (geo == null) return false;
-            try
+            if (string.IsNullOrWhiteSpace(unit)) return "N/A";
+            if (unit.EndsWith("3") || unit.ToLower().Contains("cu")) return "Volume";
+            if (unit.EndsWith("2") || unit.ToLower().Contains("sq")) return "Area";
+            return "Length";
+        }
+
+        private bool TryComputeQuantity(GeometryBase geo, RhinoDoc doc, out double quantity, out string unit, out string quantityType)
+        {
+            quantity = 0.0;
+            unit = string.Empty;
+            quantityType = "N/A";
+            if (geo == null || doc == null) return false;
+
+            var unitAbbreviation = doc.GetUnitSystemName(true, true, false, true);
+
+            switch (geo)
             {
-                switch (geo)
+                case Brep brep when brep.IsSolid:
+                    quantity = brep.GetVolume();
+                    quantityType = "Volume";
+                    unit = $"{unitAbbreviation}³";
+                    break;
+                case Extrusion extrusion:
+                    var brepFromExtrusion = extrusion.ToBrep();
+                    if (brepFromExtrusion != null && brepFromExtrusion.IsSolid)
+                    {
+                        quantity = brepFromExtrusion.GetVolume();
+                        quantityType = "Volume";
+                        unit = $"{unitAbbreviation}³";
+                    }
+                    break;
+                case Mesh mesh when mesh.IsClosed:
+                    quantity = mesh.Volume();
+                    quantityType = "Volume";
+                    unit = $"{unitAbbreviation}³";
+                    break;
+            }
+            if (quantity > 1e-9) return true;
+
+            AreaMassProperties amp = null;
+            switch (geo)
+            {
+                case Brep brep: amp = AreaMassProperties.Compute(brep); break;
+                case Surface srf: amp = AreaMassProperties.Compute(srf); break;
+                case Mesh mesh: amp = AreaMassProperties.Compute(mesh); break;
+                case Curve curve when curve.IsPlanar(): amp = AreaMassProperties.Compute(curve); break;
+            }
+            if (amp != null && amp.Area > 1e-9)
+            {
+                quantity = amp.Area;
+                quantityType = "Area";
+                unit = $"{unitAbbreviation}²";
+                return true;
+            }
+
+            if (geo is Curve curveForLength)
+            {
+                quantity = curveForLength.GetLength();
+                if (quantity > 1e-9)
                 {
-                    case Brep brep when brep.IsSolid:
-                        volume = brep.GetVolume(); return true;
-                    case Extrusion extrusion when extrusion.ToBrep().IsSolid:
-                        volume = extrusion.ToBrep().GetVolume(); return true;
-                    case Mesh mesh when mesh.IsClosed:
-                        volume = mesh.Volume(); return true;
-                    default:
-                        var asBrep = Brep.TryConvertBrep(geo);
-                        if (asBrep != null && asBrep.IsSolid)
-                        {
-                            volume = asBrep.GetVolume();
-                            return true;
-                        }
-                        break;
+                    quantityType = "Length";
+                    unit = unitAbbreviation;
+                    return true;
                 }
             }
-            catch (Exception ex)
-            {
-                RhinoApp.WriteLine($"Volume compute error: {ex.Message}");
-            }
+
             return false;
         }
         #endregion
