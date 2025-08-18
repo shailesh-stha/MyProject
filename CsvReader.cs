@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Linq;
 
 namespace MyProject
 {
@@ -12,38 +13,52 @@ namespace MyProject
     public static class CsvReader
     {
         /// <summary>
-        /// Reads a list of materials from an embedded CSV resource file.
-        /// The CSV is expected to have one material name per line.
+        /// Reads material LCA data from an embedded CSV resource file.
+        /// The CSV is expected to have a header row and four columns: "MaterialName", "ReferenceQuantity", "ReferenceUnit", and "LCA".
         /// </summary>
-        /// <param name="resourceName">The fully qualified name of the embedded resource (e.g., "MyProject.Resources.materialList.csv").</param>
-        /// <returns>A list of strings, where each string is a material name from the CSV.</returns>
-        public static List<string> ReadMaterialsFromResource(string resourceName)
+        /// <param name="resourceName">The fully qualified name of the embedded resource.</param>
+        /// <returns>A dictionary mapping material names (string) to their MaterialData objects.</returns>
+        public static Dictionary<string, MaterialData> ReadMaterialLcaDataFromResource(string resourceName)
         {
-            var materials = new List<string>();
+            var materials = new Dictionary<string, MaterialData>();
             var assembly = Assembly.GetExecutingAssembly();
 
-            // Use a stream to read the embedded resource file.
             using (Stream stream = assembly.GetManifestResourceStream(resourceName))
             {
                 if (stream == null)
                 {
-                    // If the stream is null, it means the resource could not be found.
-                    // This could be due to a typo in the resourceName or the file not being set as an "Embedded Resource".
                     Rhino.RhinoApp.WriteLine($"Error: Embedded resource '{resourceName}' not found.");
-                    return materials; // Return an empty list.
+                    return materials;
                 }
 
                 using (StreamReader reader = new StreamReader(stream))
                 {
+                    // Skip the header row.
+                    reader.ReadLine();
+
                     string line;
-                    // Read the file line by line until the end.
                     while ((line = reader.ReadLine()) != null)
                     {
-                        // Trim any whitespace from the line and ensure it's not empty.
-                        var materialName = line.Trim();
-                        if (!string.IsNullOrWhiteSpace(materialName))
+                        var parts = line.Split(',');
+                        if (parts.Length == 4)
                         {
-                            materials.Add(materialName);
+                            var materialName = parts[0].Trim();
+                            if (double.TryParse(parts[1], out double quantity) &&
+                                double.TryParse(parts[3], out double lcaValue))
+                            {
+                                if (!string.IsNullOrWhiteSpace(materialName))
+                                {
+                                    var unit = parts[2].Trim();
+                                    var materialData = new MaterialData
+                                    {
+                                        MaterialName = materialName,
+                                        ReferenceQuantity = quantity,
+                                        ReferenceUnit = unit,
+                                        Lca = lcaValue
+                                    };
+                                    materials[materialName] = materialData;
+                                }
+                            }
                         }
                     }
                 }

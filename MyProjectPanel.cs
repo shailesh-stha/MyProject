@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Reflection;
 
 namespace MyProject
 {
@@ -21,9 +22,9 @@ namespace MyProject
         private readonly List<string> _ifcClasses;
 
         public static string SelectedMaterial { get; private set; }
-        private readonly List<string> _materials;
+        private readonly Dictionary<string, MaterialData> _materialLcaData;
 
-        private Label _tempTotalLabel;
+        private Label _totalLcaLabel;
 
         private readonly CheckBox _showAllObjectsCheckBox;
         private readonly CheckBox _showUnassignedCheckBox;
@@ -32,7 +33,6 @@ namespace MyProject
         private readonly CheckBox _aggregateCheckBox;
 
         private bool _isSyncingSelection = false;
-        // NEW: Flag to signal that the panel needs a refresh.
         private bool _needsRefresh = false;
 
 
@@ -41,9 +41,12 @@ namespace MyProject
             public string SerialNumber { get; set; }
             public string IfcClass { get; set; }
             public string Value { get; set; }
+            public double ReferenceQuantity { get; set; }
+            public string ReferenceUnit { get; set; }
+            public string DisplayReference => !string.IsNullOrWhiteSpace(ReferenceUnit) ? $"{ReferenceQuantity:0.00} {ReferenceUnit}" : "N/A";
             public int Count { get; set; }
             public double Quantity { get; set; }
-            public double Temp { get; set; }
+            public double Lca { get; set; }
             public List<Guid> ObjectIds { get; set; } = new List<Guid>();
         }
 
@@ -51,10 +54,10 @@ namespace MyProject
 
         public MyProjectPanel(uint documentSerialNumber)
         {
-            _materials = CsvReader.ReadMaterialsFromResource("MyProject.Resources.materialList.csv");
+            _materialLcaData = CsvReader.ReadMaterialLcaDataFromResource("MyProject.Resources.materialListWithUnits.csv");
             _ifcClasses = new List<string> { "Wall", "Slab", "Beam", "Column", "Roof", "Stair", "Ramp", "Door", "Window", "Railing", "Covering" };
 
-            Styles.Add<Label>("bold_label", label => label.Font = Eto.Drawing.SystemFonts.Bold());
+            Styles.Add<Label>("bold_label", label => label.Font = SystemFonts.Bold());
 
             #region Upper Layout (General Buttons)
             var btnStructure = new Button { Text = "str-ucture" };
@@ -115,7 +118,7 @@ namespace MyProject
             #region Material Definition Layout
             var materialDropdown = new ComboBox();
             materialDropdown.Items.Add(new ListItem { Text = "" });
-            foreach (var m in _materials) materialDropdown.Items.Add(new ListItem { Text = m });
+            foreach (var m in _materialLcaData.Keys) materialDropdown.Items.Add(new ListItem { Text = m });
 
             materialDropdown.SelectedIndexChanged += (s, e) =>
             {
@@ -147,16 +150,17 @@ namespace MyProject
             #region GridView and Data Layout
             _userTextGridView = new GridView<UserTextEntry>
             {
-                ShowHeader = true,
+                ShowHeader = true,tes
                 AllowMultipleSelection = true,
                 Columns =
                 {
                     new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.SerialNumber)), HeaderText = "SN", Editable = false, Width = 30 },
-                    new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.IfcClass)), HeaderText = "IfcClass", Editable = false, Width = 100 },
-                    new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.Value)), HeaderText = "Material (Name)", Editable = false, Width = 120 },
+                    new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.IfcClass)), HeaderText = "IfcClass", Editable = false, Width = 70 },
+                    new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.Value)), HeaderText = "Material (Name)", Editable = false, Width = 140 },
+                    new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.DisplayReference)), HeaderText = "Ref. Quantity", Editable = false, Width = 80 },
                     new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.Count)), HeaderText = "Count", Editable = false, Width = 50 },
-                    new GridColumn { DataCell = new TextBoxCell { Binding = Eto.Forms.Binding.Property<UserTextEntry, string>(entry => $"{entry.Quantity:0.00}") }, HeaderText = "Quantity", Editable = false, Width = 80 },
-                    new GridColumn { DataCell = new TextBoxCell { Binding = Eto.Forms.Binding.Property<UserTextEntry, string>(entry => $"{entry.Temp:0.00}") }, HeaderText = "Temp", Editable = false, Width = 80 }
+                    new GridColumn { DataCell = new TextBoxCell { Binding = Binding.Property<UserTextEntry, string>(entry => $"{entry.Quantity:0.00}") }, HeaderText = "Quantity", Editable = false, Width = 75 },
+                    new GridColumn { DataCell = new TextBoxCell { Binding = Binding.Property<UserTextEntry, string>(entry => $"{entry.Lca:0.00}") }, HeaderText = "LCA (kgCO2 eq)", Editable = false, Width = 100 }
                 }
             };
             _userTextGridView.SelectionChanged += OnGridSelectionChanged;
@@ -209,14 +213,14 @@ namespace MyProject
                 Items = { viewOptionsLayout, groupingOptionsLayout }
             };
 
-            _tempTotalLabel = new Label { Text = "Total Temp: 0.00", Style = "bold_label" };
+            _totalLcaLabel = new Label { Text = "Total LCA: 0.00", Style = "bold_label" };
 
             var userTextLayout = new DynamicLayout { Spacing = new Size(6, 6), Padding = new Padding(10) };
             userTextLayout.AddRow(new Divider());
             userTextLayout.AddRow(new Label { Text = "Attribute User Text", Style = "bold_label" });
             userTextLayout.AddRow(checkBoxLayout);
             userTextLayout.AddRow(scrollableGrid);
-            userTextLayout.AddRow(_tempTotalLabel, null);
+            userTextLayout.AddRow(_totalLcaLabel, null);
             userTextLayout.Add(null);
             #endregion
 
@@ -239,7 +243,6 @@ namespace MyProject
             RhinoDoc.EndOpenDocument += OnDocumentChanged;
             RhinoDoc.NewDocument += OnDocumentChanged;
 
-            // NEW: Subscribe to the Idle event for safe UI updates.
             RhinoApp.Idle += OnRhinoIdle;
 
 
@@ -248,17 +251,15 @@ namespace MyProject
         }
 
         #region Event Handlers
-        // NEW: This handler runs when Rhino is idle. It checks if a refresh is needed.
         private void OnRhinoIdle(object sender, EventArgs e)
         {
             if (_needsRefresh)
             {
-                _needsRefresh = false; // Reset the flag immediately
+                _needsRefresh = false;
                 UpdatePanelData();
             }
         }
 
-        // MODIFIED: This handler no longer updates the UI directly. It just sets a flag.
         private void OnDocumentChanged(object sender, EventArgs e)
         {
             _needsRefresh = true;
@@ -463,9 +464,8 @@ namespace MyProject
             RhinoDoc.DeleteRhinoObject -= OnDatabaseChanged;
             RhinoDoc.ReplaceRhinoObject -= OnReplaceObject;
             RhinoDoc.UserStringChanged -= OnUserStringChanged;
-            RhinoDoc.EndOpenDocument -= OnDocumentChanged;
-            RhinoDoc.NewDocument -= OnDocumentChanged;
-            // NEW: Unsubscribe from the Idle event.
+            RhinoDoc.EndOpenDocument += OnDocumentChanged;
+            RhinoDoc.NewDocument += OnDocumentChanged;
             RhinoApp.Idle -= OnRhinoIdle;
 
             base.Dispose(disposing);
@@ -495,7 +495,7 @@ namespace MyProject
             if (objectsList.Count == 0)
             {
                 _userTextGridView.DataStore = new List<UserTextEntry>();
-                _tempTotalLabel.Text = "Total Temp: 0.00";
+                _totalLcaLabel.Text = "Total LCA: 0.00";
                 _userTextGridView.Invalidate();
                 return;
             }
@@ -509,52 +509,57 @@ namespace MyProject
             if (aggregate)
             {
                 #region Aggregated View Logic
-                IEnumerable<UserTextEntry> aggregatedData;
-                if (!groupByMaterial && !groupByClass)
-                {
-                    aggregatedData = objectsList.GroupBy(o => o.Attributes.GetUserString("str-material") ?? "N/A")
-                        .Select(g =>
+                IEnumerable<UserTextEntry> aggregatedData = objectsList
+                    .GroupBy(o => (
+                        Material: o.Attributes.GetUserString("str-material") ?? "N/A",
+                        IfcClass: o.Attributes.GetUserString("str-ifcclass") ?? "N/A"))
+                    .Select(g =>
+                    {
+                        double totalVolume = g.Sum(obj => { TryComputeVolume(obj.Geometry, out double v); return v; });
+                        double totalLca = 0.0;
+                        double refQuantity = 0.0;
+                        string refUnit = "";
+
+                        if (_materialLcaData.TryGetValue(g.Key.Material, out MaterialData materialData))
                         {
-                            double totalVolume = g.Sum(obj => { TryComputeVolume(obj.Geometry, out double v); return v; });
-                            return new UserTextEntry
-                            {
-                                Value = g.Key,
-                                IfcClass = "Varies",
-                                Count = g.Count(),
-                                Quantity = totalVolume,
-                                Temp = totalVolume * 3.14159,
-                                ObjectIds = g.Select(obj => obj.Id).ToList()
-                            };
-                        });
-                }
-                else
-                {
-                    aggregatedData = objectsList.GroupBy(o => (
-                            Material: o.Attributes.GetUserString("str-material") ?? "N/A",
-                            IfcClass: o.Attributes.GetUserString("str-ifcclass") ?? "N/A"))
-                        .Select(g =>
+                            totalLca = totalVolume * materialData.Lca;
+                            refQuantity = materialData.ReferenceQuantity;
+                            refUnit = materialData.ReferenceUnit;
+                        }
+
+                        return new UserTextEntry
                         {
-                            double totalVolume = g.Sum(obj => { TryComputeVolume(obj.Geometry, out double v); return v; });
-                            return new UserTextEntry
-                            {
-                                Value = g.Key.Material,
-                                IfcClass = g.Key.IfcClass,
-                                Count = g.Count(),
-                                Quantity = totalVolume,
-                                Temp = totalVolume * 3.14159,
-                                ObjectIds = g.Select(obj => obj.Id).ToList()
-                            };
-                        });
-                }
+                            Value = g.Key.Material,
+                            IfcClass = g.Key.IfcClass,
+                            ReferenceQuantity = refQuantity,
+                            ReferenceUnit = refUnit,
+                            Count = g.Count(),
+                            Quantity = totalVolume,
+                            Lca = totalLca,
+                            ObjectIds = g.Select(obj => obj.Id).ToList()
+                        };
+                    });
 
                 IEnumerable<UserTextEntry> sortedData;
                 if (groupByClass)
                 {
-                    sortedData = aggregatedData.OrderBy(d => d.IfcClass).ThenBy(d => d.Value);
+                    sortedData = aggregatedData
+                        .OrderBy(d => d.IfcClass == "N/A")
+                        .ThenBy(d => d.IfcClass)
+                        .ThenBy(d => d.Value);
+                }
+                else if (groupByMaterial)
+                {
+                    sortedData = aggregatedData
+                        .OrderBy(d => d.Value == "N/A")
+                        .ThenBy(d => d.Value)
+                        .ThenBy(d => d.IfcClass);
                 }
                 else
                 {
-                    sortedData = aggregatedData.OrderBy(d => d.Value).ThenBy(d => d.IfcClass);
+                    sortedData = aggregatedData
+                        .OrderBy(d => d.Value == "N/A")
+                        .ThenBy(d => d.Value);
                 }
 
                 gridData = FormatDataForHierarchy(sortedData.ToList(), groupByClass, groupByMaterial);
@@ -566,39 +571,54 @@ namespace MyProject
                 var processedObjects = objectsList.Select(obj =>
                 {
                     TryComputeVolume(obj.Geometry, out double volume);
+                    string materialName = obj.Attributes.GetUserString("str-material") ?? "N/A";
+                    double lca = 0.0;
+                    double refQuantity = 0.0;
+                    string refUnit = "";
+
+                    if (_materialLcaData.TryGetValue(materialName, out MaterialData materialData))
+                    {
+                        lca = volume * materialData.Lca;
+                        refQuantity = materialData.ReferenceQuantity;
+                        refUnit = materialData.ReferenceUnit;
+                    }
+
                     return new UserTextEntry
                     {
-                        Value = obj.Attributes.GetUserString("str-material") ?? "N/A",
+                        Value = materialName,
                         IfcClass = obj.Attributes.GetUserString("str-ifcclass") ?? "N/A",
+                        ReferenceQuantity = refQuantity,
+                        ReferenceUnit = refUnit,
                         Count = 1,
                         Quantity = volume,
-                        Temp = volume * 3.14159,
+                        Lca = lca,
                         ObjectIds = new List<Guid> { obj.Id }
                     };
                 }).ToList();
 
-                if (!groupByMaterial && !groupByClass)
+                IEnumerable<UserTextEntry> sortedData;
+                if (groupByClass)
                 {
-                    gridData = processedObjects;
-                    int sn = 1;
-                    foreach (var entry in gridData)
-                    {
-                        entry.SerialNumber = $"{sn++}.";
-                    }
+                    sortedData = processedObjects
+                        .OrderBy(d => d.IfcClass == "N/A")
+                        .ThenBy(d => d.IfcClass)
+                        .ThenBy(d => d.Value);
+                }
+                else if (groupByMaterial)
+                {
+                    sortedData = processedObjects
+                        .OrderBy(d => d.Value == "N/A")
+                        .ThenBy(d => d.Value)
+                        .ThenBy(d => d.IfcClass);
                 }
                 else
                 {
-                    IEnumerable<UserTextEntry> sortedData;
-                    if (groupByClass)
-                    {
-                        sortedData = processedObjects.OrderBy(d => d.IfcClass).ThenBy(d => d.Value);
-                    }
-                    else
-                    {
-                        sortedData = processedObjects.OrderBy(d => d.Value).ThenBy(d => d.IfcClass);
-                    }
-                    gridData = FormatDataForHierarchy(sortedData.ToList(), groupByClass, groupByMaterial);
+                    sortedData = processedObjects
+                        .OrderBy(d => d.Value == "N/A")
+                        .ThenBy(d => d.Value)
+                        .ThenBy(d => d.IfcClass);
                 }
+                gridData = FormatDataForHierarchy(sortedData.ToList(), groupByClass, groupByMaterial);
                 #endregion
             }
 
@@ -609,7 +629,7 @@ namespace MyProject
             }
 
             _userTextGridView.DataStore = finalData;
-            _tempTotalLabel.Text = $"Total Temp: {finalData.Sum(entry => entry.Temp):0.00}";
+            _totalLcaLabel.Text = $"Total LCA: {finalData.Sum(entry => entry.Lca):0.00} kgCO2 eq";
 
             _userTextGridView.Invalidate();
 
@@ -646,14 +666,31 @@ namespace MyProject
 
             foreach (var item in sortedData)
             {
-                string currentPrimaryGroup = groupByClass ? item.IfcClass : item.Value;
-                bool isFirstInGroup = currentPrimaryGroup != lastPrimaryGroup;
+                string currentPrimaryGroup = "N/A";
+                if (groupByClass)
+                {
+                    currentPrimaryGroup = item.IfcClass;
+                }
+                else if (groupByMaterial)
+                {
+                    currentPrimaryGroup = item.Value;
+                }
+                else
+                {
+                    currentPrimaryGroup = sn.ToString();
+                }
 
+                bool isFirstInGroup = currentPrimaryGroup != lastPrimaryGroup;
                 item.SerialNumber = isFirstInGroup ? $"{sn++}." : "";
 
                 if (groupByClass && !isFirstInGroup)
                 {
                     item.IfcClass = "";
+                }
+
+                if (groupByMaterial && !isFirstInGroup)
+                {
+                    item.Value = "";
                 }
 
                 formattedList.Add(item);

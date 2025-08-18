@@ -23,10 +23,12 @@
   
   <ItemGroup>
     <None Remove="Resources\materialList.csv" />
+    <None Remove="Resources\materialListWithUnits.csv" />
   </ItemGroup>
   
   <ItemGroup>
     <EmbeddedResource Include="Resources\materialList.csv" />
+    <EmbeddedResource Include="Resources\materialListWithUnits.csv" />
   </ItemGroup>
   
   <ItemGroup>
