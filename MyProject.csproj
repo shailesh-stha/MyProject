@@ -24,12 +24,22 @@
   
   <ItemGroup>
     <None Remove="EmbeddedResources\strLCA32.ico" />
+    <None Remove="Resources\addIfcClass256.ico" />
+    <None Remove="Resources\addMaterial256.ico" />
+    <None Remove="Resources\Buttons\assignIfcClass256.ico" />
+    <None Remove="Resources\Buttons\assignMaterial256.ico" />
+    <None Remove="Resources\columnsView.ico" />
     <None Remove="Resources\materialList.csv" />
     <None Remove="Resources\materialListWithUnits.csv" />
+    <None Remove="Resources\removeIfcClass256.ico" />
+    <None Remove="Resources\removeMaterial256.ico" />
     <None Remove="Resources\strLCA16.png" />
     <None Remove="Resources\strLCA24.png" />
+    <None Remove="Resources\strLCA256.ico" />
     <None Remove="Resources\strLCA256.png" />
+    <None Remove="Resources\strLCA32.ico" />
     <None Remove="Resources\strLCA32.png" />
+    <None Remove="Resources\testIcon.svg" />
   </ItemGroup>
   
   <ItemGroup>
@@ -38,16 +48,31 @@
   
   <ItemGroup>
     <EmbeddedResource Include="EmbeddedResources\strLCA32.ico" />
-    <EmbeddedResource Include="Resources\materialList.csv" />
-    <EmbeddedResource Include="Resources\materialListWithUnits.csv" />
-    <EmbeddedResource Include="Resources\strLCA16.png">
+    <EmbeddedResource Include="Resources\Buttons\assignIfcClass256.ico">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </EmbeddedResource>
-    <EmbeddedResource Include="Resources\strLCA24.png">
+    <EmbeddedResource Include="Resources\Buttons\assignMaterial256.ico">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </EmbeddedResource>
-    <EmbeddedResource Include="Resources\strLCA256.png" />
-    <EmbeddedResource Include="Resources\strLCA32.png">
+    <EmbeddedResource Include="Resources\Buttons\columnsView.ico">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\materialList.csv">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\materialListWithUnits.csv">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\Buttons\removeIfcClass256.ico">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\Buttons\removeMaterial256.ico">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\strLCA256.ico">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\strLCA32.ico">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </EmbeddedResource>
   </ItemGroup>
@@ -55,6 +80,8 @@
   <ItemGroup>
     <PackageReference Include="Eto.Forms" Version="2.9.0" />
     <PackageReference Include="RhinoCommon" Version="8.21.25188.17001" ExcludeAssets="runtime" />
+    <PackageReference Include="SkiaSharp" Version="3.119.0" />
+    <PackageReference Include="Svg.Skia" Version="3.0.5" />
     <PackageReference Include="System.Drawing.Common" Version="9.0.8" />
     <PackageReference Include="System.Resources.Extensions" Version="9.0.8" />
   </ItemGroup>

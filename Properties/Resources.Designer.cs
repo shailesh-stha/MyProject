@@ -63,6 +63,36 @@ namespace MyProject.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
+        internal static byte[] assignIfcClass256 {
+            get {
+                object obj = ResourceManager.GetObject("assignIfcClass256", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] assignMaterial256 {
+            get {
+                object obj = ResourceManager.GetObject("assignMaterial256", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] columnsView {
+            get {
+                object obj = ResourceManager.GetObject("columnsView", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
         internal static byte[] materialList {
             get {
                 object obj = ResourceManager.GetObject("materialList", resourceCulture);
@@ -81,51 +111,41 @@ namespace MyProject.Properties {
         }
         
         /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
-        internal static System.Drawing.Bitmap strLCA16 {
+        internal static byte[] removeIfcClass256 {
             get {
-                object obj = ResourceManager.GetObject("strLCA16", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap strLCA24 {
-            get {
-                object obj = ResourceManager.GetObject("strLCA24", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap strLCA256 {
-            get {
-                object obj = ResourceManager.GetObject("strLCA256", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Drawing.Bitmap.
-        /// </summary>
-        internal static System.Drawing.Bitmap strLCA32 {
-            get {
-                object obj = ResourceManager.GetObject("strLCA32", resourceCulture);
-                return ((System.Drawing.Bitmap)(obj));
+                object obj = ResourceManager.GetObject("removeIfcClass256", resourceCulture);
+                return ((byte[])(obj));
             }
         }
         
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
-        internal static byte[] strLCA32ico {
+        internal static byte[] removeMaterial256 {
             get {
-                object obj = ResourceManager.GetObject("strLCA32ico", resourceCulture);
+                object obj = ResourceManager.GetObject("removeMaterial256", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] strLCA256 {
+            get {
+                object obj = ResourceManager.GetObject("strLCA256", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] strLCA32 {
+            get {
+                object obj = ResourceManager.GetObject("strLCA32", resourceCulture);
                 return ((byte[])(obj));
             }
         }

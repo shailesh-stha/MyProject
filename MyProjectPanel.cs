@@ -12,6 +12,8 @@ using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using MyProject.Properties;
+using System.IO;
 
 namespace MyProject
 {
@@ -101,16 +103,15 @@ namespace MyProject
         #region UI Layout Methods
         private Control CreateUpperLayout()
         {
-            var btnStructure = new Button { Text = "www.str-ucture.com" };
-
-            // Call the helper function and pass the desired size (e.g., 24x24 pixels)
-            var structureIcon = LoadBitmapFromResource("MyProject.Resources.strLCA24.png");
-
-            if (structureIcon != null)
+            var structureIcon = BytesToEtoBitmap(Resources.strLCA256, new Size(18, 18));
+            var btnStructure = new Button
             {
-                btnStructure.Image = structureIcon;
-                btnStructure.ImagePosition = ButtonImagePosition.Left;
-            }
+                Image = structureIcon,
+                //Text = "structure.com", // or string.Empty,
+                ToolTip = "Visit str-ucture.com",
+                MinimumSize = Size.Empty,
+                ImagePosition = ButtonImagePosition.Left
+            };
 
             btnStructure.Click += (s, e) =>
             {
@@ -137,10 +138,22 @@ namespace MyProject
             _ifcDropdown.Items.Add(new ListItem { Text = "" });
             _ifcClasses.ForEach(cls => _ifcDropdown.Items.Add(new ListItem { Text = cls }));
 
-            var assignButton = new Button { Text = "Assign" };
+            var assignIfcClassIcon = BytesToEtoBitmap(Resources.assignIfcClass256, new Size(18, 18));
+            var assignButton= new Button
+            {
+                Image = assignIfcClassIcon,
+                MinimumSize = Size.Empty,
+                ImagePosition = ButtonImagePosition.Left
+            };
             assignButton.Click += (s, e) => AssignUserString("str-ifcclass", _ifcDropdown.SelectedValue as ListItem);
 
-            var removeButton = new Button { Text = "Remove" };
+            var removeIfcClassIcon = BytesToEtoBitmap(Resources.removeIfcClass256, new Size(18, 18));
+            var removeButton = new Button
+            {
+                Image = removeIfcClassIcon,
+                MinimumSize = Size.Empty,
+                ImagePosition = ButtonImagePosition.Left
+            };
             removeButton.Click += (s, e) => RemoveUserString("str-ifcclass");
 
             var buttonsLayout = new StackLayout
@@ -161,10 +174,23 @@ namespace MyProject
             _materialDropdown.Items.Add(new ListItem { Text = "" });
             _materialLcaData.Keys.ToList().ForEach(m => _materialDropdown.Items.Add(new ListItem { Text = m }));
 
-            var assignButton = new Button { Text = "Assign" };
+
+            var assignMaterialIcon = BytesToEtoBitmap(Resources.assignMaterial256, new Size(16, 16));
+            var assignButton = new Button
+            {
+                Image = assignMaterialIcon,
+                MinimumSize = Size.Empty,
+                ImagePosition = ButtonImagePosition.Left
+            };
             assignButton.Click += (s, e) => AssignUserString("str-material", _materialDropdown.SelectedValue as ListItem);
 
-            var removeButton = new Button { Text = "Remove" };
+            var removeMaterialIcon = BytesToEtoBitmap(Resources.removeMaterial256, new Size(16, 16));
+            var removeButton = new Button
+            {
+                Image = removeMaterialIcon,
+                MinimumSize = Size.Empty,
+                ImagePosition = ButtonImagePosition.Left
+            };
             removeButton.Click += (s, e) => RemoveUserString("str-material");
 
             var buttonsLayout = new StackLayout
@@ -208,19 +234,17 @@ namespace MyProject
             var viewOptionsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 10, Items = { _showAllObjectsCheckBox, _showUnassignedCheckBox } };
             var groupingOptionsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 10, Items = { _groupByClassCheckBox, _groupByMaterialCheckBox, _aggregateCheckBox } };
 
-            // New "Table Columns" button for the "Attribute User Text" section.
             var btnTableColumns = new Button { Text = "Table Columns" };
             btnTableColumns.Click += (s, e) => new ColumnVisibilityDialog(_userTextGridView).ShowModal(this);
 
             var btnSelectUnassigned = new Button { Text = "Select Unassigned" };
             btnSelectUnassigned.Click += OnSelectUnassignedClick;
 
-            // Updated layout for the header to include the new button on the right.
             var gridHeaderLayout = new DynamicLayout { Spacing = new Size(6, 6) };
             gridHeaderLayout.AddRow(new Label { Text = "Attribute User Text", Style = "bold_label" }, null, btnSelectUnassigned, btnTableColumns);
 
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
-            layout.AddRow(gridHeaderLayout); // Use the new header layout.
+            layout.AddRow(gridHeaderLayout);
             layout.AddRow(viewOptionsLayout);
             layout.AddRow(groupingOptionsLayout);
             layout.AddRow(scrollableGrid);
@@ -229,41 +253,35 @@ namespace MyProject
         }
 
         /// <summary>
-        /// Loads a Bitmap from an embedded resource stream, with an option to resize it.
+        /// **MODIFIED**: Helper method to convert a byte array from project resources into an Eto.Drawing.Bitmap, with optional resizing.
         /// </summary>
-        /// <param name="resourceName">The fully qualified name of the resource (e.g., "MyProject.Resources.icon.png").</param>
+        /// <param name="bytes">The byte array containing the icon data.</param>
         /// <param name="desiredSize">An optional Eto.Drawing.Size to resize the icon to. If null, the original size is used.</param>
-        /// <returns>A Bitmap object if the resource is found, otherwise null.</returns>
-        private Bitmap LoadBitmapFromResource(string resourceName, Size? desiredSize = null)
+        /// <returns>An Eto.Drawing.Bitmap object if conversion is successful, otherwise null.</returns>
+        private Bitmap BytesToEtoBitmap(byte[] bytes, Size? desiredSize = null)
         {
             try
             {
-                var assembly = Assembly.GetExecutingAssembly();
-                using (var stream = assembly.GetManifestResourceStream(resourceName))
+                if (bytes == null || bytes.Length == 0)
                 {
-                    if (stream == null)
-                    {
-                        RhinoApp.WriteLine($"Error: Embedded resource not found at path: {resourceName}");
-                        return null;
-                    }
+                    RhinoApp.WriteLine("Error: Icon resource byte array is null or empty.");
+                    return null;
+                }
+                using (var ms = new MemoryStream(bytes))
+                {
+                    var originalBitmap = new Bitmap(ms);
 
-                    // Load the original bitmap from the stream
-                    var originalBitmap = new Bitmap(stream);
-
-                    // If a desired size is provided, create a new resized bitmap from the original
                     if (desiredSize.HasValue)
                     {
-                        // The new Bitmap constructor creates a scaled version of the original
                         return new Bitmap(originalBitmap, desiredSize.Value.Width, desiredSize.Value.Height, ImageInterpolation.High);
                     }
 
-                    // Otherwise, return the original bitmap
                     return originalBitmap;
                 }
             }
             catch (Exception ex)
             {
-                RhinoApp.WriteLine($"Error loading bitmap from resource '{resourceName}': {ex.Message}");
+                RhinoApp.WriteLine($"Error creating bitmap from resource bytes: {ex.Message}");
                 return null;
             }
         }
@@ -331,11 +349,11 @@ namespace MyProject
             if (doc == null) return;
 
             var idsToSelect = doc.Objects.Where(o => o.IsSelectable(true, false, false, true) &&
-                                                    o.Attributes.Visible &&
-                                                    doc.Layers[o.Attributes.LayerIndex].IsVisible &&
-                                                    string.IsNullOrWhiteSpace(o.Attributes.GetUserString("str-material")))
-                               .Select(o => o.Id)
-                               .ToList();
+                                                     o.Attributes.Visible &&
+                                                     doc.Layers[o.Attributes.LayerIndex].IsVisible &&
+                                                     string.IsNullOrWhiteSpace(o.Attributes.GetUserString("str-material")))
+                                        .Select(o => o.Id)
+                                        .ToList();
 
             doc.Views.RedrawEnabled = false;
             try
