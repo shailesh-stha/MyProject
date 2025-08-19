@@ -79,5 +79,45 @@ namespace MyProject.Properties {
                 return ((byte[])(obj));
             }
         }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        internal static System.Drawing.Bitmap strLCA16 {
+            get {
+                object obj = ResourceManager.GetObject("strLCA16", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        internal static System.Drawing.Bitmap strLCA24 {
+            get {
+                object obj = ResourceManager.GetObject("strLCA24", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        internal static System.Drawing.Bitmap strLCA32 {
+            get {
+                object obj = ResourceManager.GetObject("strLCA32", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] strLCA32ico {
+            get {
+                object obj = ResourceManager.GetObject("strLCA32ico", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
     }
 }

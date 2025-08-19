@@ -22,13 +22,25 @@
   </PropertyGroup>
   
   <ItemGroup>
+    <None Remove="EmbeddedResources\strLCA32.ico" />
     <None Remove="Resources\materialList.csv" />
     <None Remove="Resources\materialListWithUnits.csv" />
+    <None Remove="Resources\strLCA16.png" />
+    <None Remove="Resources\strLCA24.png" />
+    <None Remove="Resources\strLCA32.png" />
   </ItemGroup>
   
   <ItemGroup>
+    <EmbeddedResource Include="EmbeddedResources\strLCA32.ico" />
     <EmbeddedResource Include="Resources\materialList.csv" />
     <EmbeddedResource Include="Resources\materialListWithUnits.csv" />
+    <EmbeddedResource Include="Resources\strLCA16.png" />
+    <EmbeddedResource Include="Resources\strLCA24.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\strLCA32.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </EmbeddedResource>
   </ItemGroup>
   
   <ItemGroup>
@@ -55,12 +67,6 @@
   
   <ItemGroup>
     <None Update="Resources\strLCA.png">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Resources\strLCA24.png">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Update="Resources\strLCA32.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>
