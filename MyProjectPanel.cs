@@ -1,19 +1,17 @@
 ﻿// MyProjectPanel.cs
 using Eto.Drawing;
 using Eto.Forms;
+using MyProject.Properties;
 using Rhino;
 using Rhino.DocObjects;
 using Rhino.Geometry;
-using Rhino.Input.Custom;
 using Rhino.UI.Controls;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Reflection;
-using System.Runtime.InteropServices;
-using MyProject.Properties;
 using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
 
 namespace MyProject
 {
@@ -36,6 +34,9 @@ namespace MyProject
         private readonly CheckBox _aggregateCheckBox;
         private bool _isSyncingSelection = false;
         private bool _needsRefresh = false;
+
+        // NEW: Flag to track if the mouse is over the grid, as per your suggestion.
+        private bool _isMouseOverGrid = false;
 
         private class UserTextEntry
         {
@@ -107,7 +108,6 @@ namespace MyProject
             var btnStructure = new Button
             {
                 Image = structureIcon,
-                //Text = "structure.com", // or string.Empty,
                 ToolTip = "Visit str-ucture.com",
                 MinimumSize = Size.Empty,
                 ImagePosition = ButtonImagePosition.Left
@@ -139,7 +139,7 @@ namespace MyProject
             _ifcClasses.ForEach(cls => _ifcDropdown.Items.Add(new ListItem { Text = cls }));
 
             var assignIfcClassIcon = BytesToEtoBitmap(Resources.assignIfcClass256, new Size(18, 18));
-            var assignButton= new Button
+            var assignButton = new Button
             {
                 Image = assignIfcClassIcon,
                 MinimumSize = Size.Empty,
@@ -212,12 +212,12 @@ namespace MyProject
             _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.IfcClass)), HeaderText = "IfcClass", Editable = false, Width = 60 });
             _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.Value)), HeaderText = "Material (Name)", Editable = false, Width = 150 });
             _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.DisplayReference)) { TextAlignment = TextAlignment.Right }, HeaderText = "Ref. Qty.", Editable = false, Width = 70 });
-            _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Binding.Property<UserTextEntry, string>(entry => $"{entry.ReferenceLca:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "Ref. LCA", Editable = false, Width = 70 });
+            _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Eto.Forms.Binding.Property<UserTextEntry, string>(entry => $"{entry.ReferenceLca:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "Ref. LCA", Editable = false, Width = 70 });
             _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.Count)) { TextAlignment = TextAlignment.Right }, HeaderText = "Count", Editable = false, Width = 50 });
             _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.DisplayQuantity)) { TextAlignment = TextAlignment.Right }, HeaderText = "Qty. (Rh)", Editable = false, Width = 75 });
             _userTextGridView.Columns.Add(_qtyMultiplierColumn);
-            _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Binding.Property<UserTextEntry, string>(entry => $"{entry.QuantityTotal:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "Qty. Total", Editable = false, Width = 75 });
-            _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Binding.Property<UserTextEntry, string>(entry => $"{entry.Lca:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "LCA (kgCO2 eq)", Editable = false, Width = 100 });
+            _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Eto.Forms.Binding.Property<UserTextEntry, string>(entry => $"{entry.QuantityTotal:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "Qty. Total", Editable = false, Width = 75 });
+            _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Eto.Forms.Binding.Property<UserTextEntry, string>(entry => $"{entry.Lca:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "LCA (kgCO2 eq)", Editable = false, Width = 100 });
 
             _qtyMultiplierColumn.Visible = !_aggregateCheckBox.Checked ?? true;
 
@@ -229,6 +229,10 @@ namespace MyProject
 
             _userTextGridView.SelectionChanged += OnGridSelectionChanged;
             _userTextGridView.CellEdited += OnGridCellEdited;
+
+            // NEW: Subscribe to mouse events to toggle our flag.
+            _userTextGridView.MouseEnter += (s, e) => _isMouseOverGrid = true;
+            _userTextGridView.MouseLeave += (s, e) => _isMouseOverGrid = false;
 
             var scrollableGrid = new Scrollable { Content = _userTextGridView, Height = 250 };
             var viewOptionsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 10, Items = { _showAllObjectsCheckBox, _showUnassignedCheckBox } };
@@ -252,30 +256,18 @@ namespace MyProject
             return layout;
         }
 
-        /// <summary>
-        /// **MODIFIED**: Helper method to convert a byte array from project resources into an Eto.Drawing.Bitmap, with optional resizing.
-        /// </summary>
-        /// <param name="bytes">The byte array containing the icon data.</param>
-        /// <param name="desiredSize">An optional Eto.Drawing.Size to resize the icon to. If null, the original size is used.</param>
-        /// <returns>An Eto.Drawing.Bitmap object if conversion is successful, otherwise null.</returns>
         private Bitmap BytesToEtoBitmap(byte[] bytes, Size? desiredSize = null)
         {
             try
             {
-                if (bytes == null || bytes.Length == 0)
-                {
-                    RhinoApp.WriteLine("Error: Icon resource byte array is null or empty.");
-                    return null;
-                }
+                if (bytes == null || bytes.Length == 0) return null;
                 using (var ms = new MemoryStream(bytes))
                 {
                     var originalBitmap = new Bitmap(ms);
-
                     if (desiredSize.HasValue)
                     {
                         return new Bitmap(originalBitmap, desiredSize.Value.Width, desiredSize.Value.Height, ImageInterpolation.High);
                     }
-
                     return originalBitmap;
                 }
             }
@@ -359,7 +351,7 @@ namespace MyProject
             try
             {
                 doc.Objects.UnselectAll();
-                if (idsToSelect.Count > 0)
+                if (idsToSelect.Any())
                 {
                     doc.Objects.Select(idsToSelect, true);
                     RhinoApp.WriteLine($"{idsToSelect.Count} unassigned object(s) selected.");
@@ -386,25 +378,49 @@ namespace MyProject
             }
         }
 
+        /// <summary>
+        /// MODIFIED: This entire method is now guarded by your suggested logic.
+        /// It will only run if the mouse is physically over the grid control,
+        /// preventing it from interfering with viewport selection.
+        /// </summary>
         private void OnGridSelectionChanged(object sender, EventArgs e)
         {
+            if (!_isMouseOverGrid) return;
+
             if (_isSyncingSelection) return;
             _isSyncingSelection = true;
 
             var doc = RhinoDoc.ActiveDoc;
-            if (doc == null || _userTextGridView.DataStore == null)
+            if (doc == null)
             {
                 _isSyncingSelection = false;
                 return;
             }
 
-            var idsToSelect = _userTextGridView.SelectedItems.SelectMany(entry => entry.ObjectIds).ToHashSet();
-            doc.Objects.UnselectAll();
-            doc.Objects.Select(idsToSelect, true);
-            doc.Views.Redraw();
+            doc.Views.RedrawEnabled = false;
+            try
+            {
+                // Using the more robust, non-destructive logic to sync the viewport to the grid.
+                var gridSelectionIds = _userTextGridView.SelectedItems.SelectMany(entry => entry.ObjectIds).ToHashSet();
+                var rhinoSelectionIds = doc.Objects.GetSelectedObjects(false, false).Select(o => o.Id).ToHashSet();
 
+                var idsToSelect = gridSelectionIds.Except(rhinoSelectionIds).ToList();
+                var idsToDeselect = rhinoSelectionIds.Except(gridSelectionIds).ToList();
+
+                if (idsToSelect.Any()) doc.Objects.Select(idsToSelect, true);
+                if (idsToDeselect.Any())
+                {
+                    foreach (var id in idsToDeselect) doc.Objects.Select(id, false);
+                }
+            }
+            finally
+            {
+                doc.Views.RedrawEnabled = true;
+                doc.Views.Redraw();
+            }
             _isSyncingSelection = false;
         }
+
 
         private void OnSelectionChanged(object sender, RhinoObjectSelectionEventArgs e) => UpdatePanelDataSafe();
         private void OnDeselectAllObjects(object sender, RhinoDeselectAllObjectsEventArgs e) => UpdatePanelDataSafe();
@@ -435,6 +451,7 @@ namespace MyProject
 
         #endregion
 
+        // The rest of the file remains unchanged from the original.
         #region Core Logic Methods
         private void UpdatePanelData() => Eto.Forms.Application.Instance.AsyncInvoke(UpdateUserTextGrid);
 
