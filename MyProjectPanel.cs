@@ -67,7 +67,7 @@ namespace MyProject
                 AllowMultipleSelection = true,
                 Width = 550
             };
-            
+
             _qtyMultiplierColumn = new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.QuantityMultiplier)) { TextAlignment = TextAlignment.Right }, HeaderText = "Qty. Multiplier", Editable = true, Width = 90 };
 
             _totalLcaLabel = new Label { Text = "Total LCA: 0.00", Style = "bold_label" };
@@ -101,7 +101,17 @@ namespace MyProject
         #region UI Layout Methods
         private Control CreateUpperLayout()
         {
-            var btnStructure = new Button { Text = "str-ucture" };
+            var btnStructure = new Button { Text = "www.str-ucture.com" };
+
+            // Call the helper function and pass the desired size (e.g., 24x24 pixels)
+            var structureIcon = LoadBitmapFromResource("MyProject.Resources.strLCA24.png");
+
+            if (structureIcon != null)
+            {
+                btnStructure.Image = structureIcon;
+                btnStructure.ImagePosition = ButtonImagePosition.Left;
+            }
+
             btnStructure.Click += (s, e) =>
             {
                 var url = "http://www.str-ucture.com";
@@ -109,14 +119,11 @@ namespace MyProject
                 catch (Exception ex) { RhinoApp.WriteLine($"Error opening website: {ex.Message}"); }
             };
 
-            var btnSelectUnassigned = new Button { Text = "Select Unassigned" };
-            btnSelectUnassigned.Click += OnSelectUnassignedClick;
-
             var buttonLayout = new StackLayout
             {
                 Orientation = Orientation.Horizontal,
                 Spacing = 5,
-                Items = { btnSelectUnassigned, btnStructure }
+                Items = { null, btnStructure }
             };
 
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
@@ -205,9 +212,12 @@ namespace MyProject
             var btnTableColumns = new Button { Text = "Table Columns" };
             btnTableColumns.Click += (s, e) => new ColumnVisibilityDialog(_userTextGridView).ShowModal(this);
 
+            var btnSelectUnassigned = new Button { Text = "Select Unassigned" };
+            btnSelectUnassigned.Click += OnSelectUnassignedClick;
+
             // Updated layout for the header to include the new button on the right.
             var gridHeaderLayout = new DynamicLayout { Spacing = new Size(6, 6) };
-            gridHeaderLayout.AddRow(new Label { Text = "Attribute User Text", Style = "bold_label" }, null, btnTableColumns);
+            gridHeaderLayout.AddRow(new Label { Text = "Attribute User Text", Style = "bold_label" }, null, btnSelectUnassigned, btnTableColumns);
 
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
             layout.AddRow(gridHeaderLayout); // Use the new header layout.
@@ -216,6 +226,46 @@ namespace MyProject
             layout.AddRow(scrollableGrid);
             layout.AddRow(_totalLcaLabel, null);
             return layout;
+        }
+
+        /// <summary>
+        /// Loads a Bitmap from an embedded resource stream, with an option to resize it.
+        /// </summary>
+        /// <param name="resourceName">The fully qualified name of the resource (e.g., "MyProject.Resources.icon.png").</param>
+        /// <param name="desiredSize">An optional Eto.Drawing.Size to resize the icon to. If null, the original size is used.</param>
+        /// <returns>A Bitmap object if the resource is found, otherwise null.</returns>
+        private Bitmap LoadBitmapFromResource(string resourceName, Size? desiredSize = null)
+        {
+            try
+            {
+                var assembly = Assembly.GetExecutingAssembly();
+                using (var stream = assembly.GetManifestResourceStream(resourceName))
+                {
+                    if (stream == null)
+                    {
+                        RhinoApp.WriteLine($"Error: Embedded resource not found at path: {resourceName}");
+                        return null;
+                    }
+
+                    // Load the original bitmap from the stream
+                    var originalBitmap = new Bitmap(stream);
+
+                    // If a desired size is provided, create a new resized bitmap from the original
+                    if (desiredSize.HasValue)
+                    {
+                        // The new Bitmap constructor creates a scaled version of the original
+                        return new Bitmap(originalBitmap, desiredSize.Value.Width, desiredSize.Value.Height, ImageInterpolation.High);
+                    }
+
+                    // Otherwise, return the original bitmap
+                    return originalBitmap;
+                }
+            }
+            catch (Exception ex)
+            {
+                RhinoApp.WriteLine($"Error loading bitmap from resource '{resourceName}': {ex.Message}");
+                return null;
+            }
         }
 
         #endregion

@@ -19,6 +19,7 @@
     <Title>MyProject</Title>
     <Company>MyProject Authors</Company>
     <Description>Description of MyProject</Description>
+    <ApplicationIcon>EmbeddedResources\strLCA32.ico</ApplicationIcon>
   </PropertyGroup>
   
   <ItemGroup>
@@ -27,17 +28,25 @@
     <None Remove="Resources\materialListWithUnits.csv" />
     <None Remove="Resources\strLCA16.png" />
     <None Remove="Resources\strLCA24.png" />
+    <None Remove="Resources\strLCA256.png" />
     <None Remove="Resources\strLCA32.png" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <Content Include="EmbeddedResources\strLCA32.ico" />
   </ItemGroup>
   
   <ItemGroup>
     <EmbeddedResource Include="EmbeddedResources\strLCA32.ico" />
     <EmbeddedResource Include="Resources\materialList.csv" />
     <EmbeddedResource Include="Resources\materialListWithUnits.csv" />
-    <EmbeddedResource Include="Resources\strLCA16.png" />
+    <EmbeddedResource Include="Resources\strLCA16.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </EmbeddedResource>
     <EmbeddedResource Include="Resources\strLCA24.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </EmbeddedResource>
+    <EmbeddedResource Include="Resources\strLCA256.png" />
     <EmbeddedResource Include="Resources\strLCA32.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </EmbeddedResource>
