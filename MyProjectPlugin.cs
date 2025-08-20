@@ -25,7 +25,7 @@ namespace MyProject
         protected override LoadReturnCode OnLoad(ref string errorMessage)
         {
             // Convert the byte array from resources into an Icon object
-            Icon panelIcon = BytesToIcon(Properties.Resources.strLCA32);
+            Icon panelIcon = BytesToIcon(Properties.Resources.icon_strLCA32);
 
             // Pass the newly created Icon object to the RegisterPanel method
             Panels.RegisterPanel(this, typeof(MyProjectPanel), "MyProjectPanel", panelIcon);

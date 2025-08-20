@@ -34,8 +34,7 @@ namespace MyProject
         private readonly CheckBox _aggregateCheckBox;
         private bool _isSyncingSelection = false;
         private bool _needsRefresh = false;
-
-        // NEW: Flag to track if the mouse is over the grid, as per your suggestion.
+        private TextArea _notesTextArea;
         private bool _isMouseOverGrid = false;
 
         private class UserTextEntry
@@ -60,15 +59,15 @@ namespace MyProject
 
         public MyProjectPanel(uint documentSerialNumber)
         {
-            _materialLcaData = CsvReader.ReadMaterialLcaDataFromResource("MyProject.Resources.materialListWithUnits.csv");
-            _ifcClasses = new List<string> { "Wall", "Slab", "Beam", "Column", "Foundation", "Roof", "Stair", "Ramp", "Door", "Window", "Railing", "Covering" };
+            _materialLcaData = CsvReader.ReadMaterialLcaDataFromResource("MyProject.Resources.Data.materialListWithUnits.csv");
+            _ifcClasses = CsvReader.ReadIfcClassesFromResource("MyProject.Resources.Data.ifcClassList.csv");
             Styles.Add<Label>("bold_label", label => label.Font = SystemFonts.Bold());
 
             _userTextGridView = new GridView<UserTextEntry>
             {
                 ShowHeader = true,
                 AllowMultipleSelection = true,
-                Width = 550
+                Width = 550,
             };
 
             _qtyMultiplierColumn = new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.QuantityMultiplier)) { TextAlignment = TextAlignment.Right }, HeaderText = "Qty. Multiplier", Editable = true, Width = 90 };
@@ -92,6 +91,8 @@ namespace MyProject
             mainLayout.Add(new Divider());
             mainLayout.Add(CreateDataLayout());
             mainLayout.Add(new Divider());
+            mainLayout.Add(CreateNotesLayout());
+            mainLayout.Add(new Divider());
             mainLayout.Add(null, true);
 
             Content = mainLayout;
@@ -104,7 +105,7 @@ namespace MyProject
         #region UI Layout Methods
         private Control CreateUpperLayout()
         {
-            var structureIcon = BytesToEtoBitmap(Resources.strLCA256, new Size(18, 18));
+            var structureIcon = BytesToEtoBitmap(Resources.btn_strLCA256, new Size(18, 18));
             var btnStructure = new Button
             {
                 Image = structureIcon,
@@ -133,12 +134,45 @@ namespace MyProject
             return layout;
         }
 
+        private Control CreateNotesLayout()
+        {
+            var notesLayout = new DynamicLayout { Spacing = new Size(6, 6) };
+            notesLayout.AddRow(new Label { Text = "Document Notes", Style = "bold_label" });
+
+            _notesTextArea = new TextArea
+            {
+                Width = 550,
+                Height = 80,
+                Text = RhinoDoc.ActiveDoc?.Notes ?? string.Empty
+            };
+
+            var saveButton = new Button
+            {
+                Text = "Save Notes",
+                MinimumSize = Size.Empty,
+                Width = 50
+            };
+            saveButton.Click += (s, e) =>
+            {
+                var doc = RhinoDoc.ActiveDoc;
+                if (doc != null)
+                {
+                    doc.Notes = _notesTextArea.Text;
+                    RhinoApp.WriteLine("Document notes saved.");
+                }
+            };
+
+            notesLayout.AddRow(_notesTextArea);
+            notesLayout.AddRow(saveButton, null);
+            return notesLayout;
+        }
+
         private Control CreateIfcDefinitionLayout()
         {
             _ifcDropdown.Items.Add(new ListItem { Text = "" });
             _ifcClasses.ForEach(cls => _ifcDropdown.Items.Add(new ListItem { Text = cls }));
 
-            var assignIfcClassIcon = BytesToEtoBitmap(Resources.assignIfcClass256, new Size(18, 18));
+            var assignIfcClassIcon = BytesToEtoBitmap(Resources.btn_assignIfcClass256, new Size(18, 18));
             var assignButton = new Button
             {
                 Image = assignIfcClassIcon,
@@ -147,7 +181,7 @@ namespace MyProject
             };
             assignButton.Click += (s, e) => AssignUserString("str-ifcclass", _ifcDropdown.SelectedValue as ListItem);
 
-            var removeIfcClassIcon = BytesToEtoBitmap(Resources.removeIfcClass256, new Size(18, 18));
+            var removeIfcClassIcon = BytesToEtoBitmap(Resources.btn_removeIfcClass256, new Size(18, 18));
             var removeButton = new Button
             {
                 Image = removeIfcClassIcon,
@@ -174,8 +208,7 @@ namespace MyProject
             _materialDropdown.Items.Add(new ListItem { Text = "" });
             _materialLcaData.Keys.ToList().ForEach(m => _materialDropdown.Items.Add(new ListItem { Text = m }));
 
-
-            var assignMaterialIcon = BytesToEtoBitmap(Resources.assignMaterial256, new Size(16, 16));
+            var assignMaterialIcon = BytesToEtoBitmap(Resources.btn_assignMaterial256, new Size(16, 16));
             var assignButton = new Button
             {
                 Image = assignMaterialIcon,
@@ -184,7 +217,7 @@ namespace MyProject
             };
             assignButton.Click += (s, e) => AssignUserString("str-material", _materialDropdown.SelectedValue as ListItem);
 
-            var removeMaterialIcon = BytesToEtoBitmap(Resources.removeMaterial256, new Size(16, 16));
+            var removeMaterialIcon = BytesToEtoBitmap(Resources.btn_removeMaterial256, new Size(16, 16));
             var removeButton = new Button
             {
                 Image = removeMaterialIcon,
@@ -209,11 +242,11 @@ namespace MyProject
         private Control CreateDataLayout()
         {
             _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.SerialNumber)), HeaderText = "SN", Editable = false, Width = 30 });
-            _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.IfcClass)), HeaderText = "IfcClass", Editable = false, Width = 60 });
+            _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.IfcClass)), HeaderText = "IfcClass", Editable = false, Width = 65 });
             _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.Value)), HeaderText = "Material (Name)", Editable = false, Width = 150 });
             _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.DisplayReference)) { TextAlignment = TextAlignment.Right }, HeaderText = "Ref. Qty.", Editable = false, Width = 70 });
             _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Eto.Forms.Binding.Property<UserTextEntry, string>(entry => $"{entry.ReferenceLca:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "Ref. LCA", Editable = false, Width = 70 });
-            _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.Count)) { TextAlignment = TextAlignment.Right }, HeaderText = "Count", Editable = false, Width = 50 });
+            _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.Count)) { TextAlignment = TextAlignment.Right }, HeaderText = "Count", Editable = false, Width = 50, Visible = false });
             _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.DisplayQuantity)) { TextAlignment = TextAlignment.Right }, HeaderText = "Qty. (Rh)", Editable = false, Width = 75 });
             _userTextGridView.Columns.Add(_qtyMultiplierColumn);
             _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Eto.Forms.Binding.Property<UserTextEntry, string>(entry => $"{entry.QuantityTotal:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "Qty. Total", Editable = false, Width = 75 });
@@ -230,7 +263,6 @@ namespace MyProject
             _userTextGridView.SelectionChanged += OnGridSelectionChanged;
             _userTextGridView.CellEdited += OnGridCellEdited;
 
-            // NEW: Subscribe to mouse events to toggle our flag.
             _userTextGridView.MouseEnter += (s, e) => _isMouseOverGrid = true;
             _userTextGridView.MouseLeave += (s, e) => _isMouseOverGrid = false;
 
@@ -238,7 +270,13 @@ namespace MyProject
             var viewOptionsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 10, Items = { _showAllObjectsCheckBox, _showUnassignedCheckBox } };
             var groupingOptionsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 10, Items = { _groupByClassCheckBox, _groupByMaterialCheckBox, _aggregateCheckBox } };
 
-            var btnTableColumns = new Button { Text = "Table Columns" };
+            var columnsViewIcon = BytesToEtoBitmap(Resources.btn_columnsView256, new Size(16, 16));
+            var btnTableColumns = new Button
+            {
+                Image = columnsViewIcon,
+                MinimumSize = Size.Empty,
+                ImagePosition = ButtonImagePosition.Left
+            };
             btnTableColumns.Click += (s, e) => new ColumnVisibilityDialog(_userTextGridView).ShowModal(this);
 
             var btnSelectUnassigned = new Button { Text = "Select Unassigned" };
@@ -283,13 +321,13 @@ namespace MyProject
         #region Event Handlers
         private void RegisterEventHandlers()
         {
-            RhinoDoc.SelectObjects += OnSelectionChanged;
-            RhinoDoc.DeselectObjects += OnSelectionChanged;
-            RhinoDoc.DeselectAllObjects += OnDeselectAllObjects;
-            RhinoDoc.AddRhinoObject += OnDatabaseChanged;
-            RhinoDoc.DeleteRhinoObject += OnDatabaseChanged;
-            RhinoDoc.ReplaceRhinoObject += OnReplaceObject;
-            RhinoDoc.UserStringChanged += OnUserStringChanged;
+            RhinoDoc.SelectObjects += OnDocumentStateChanged;
+            RhinoDoc.DeselectObjects += OnDocumentStateChanged;
+            RhinoDoc.DeselectAllObjects += OnDocumentStateChanged;
+            RhinoDoc.AddRhinoObject += OnDocumentStateChanged;
+            RhinoDoc.DeleteRhinoObject += OnDocumentStateChanged;
+            RhinoDoc.ReplaceRhinoObject += OnDocumentStateChanged;
+            RhinoDoc.UserStringChanged += OnDocumentStateChanged;
             RhinoDoc.EndOpenDocument += OnDocumentChanged;
             RhinoDoc.NewDocument += OnDocumentChanged;
             RhinoApp.Idle += OnRhinoIdle;
@@ -308,6 +346,10 @@ namespace MyProject
         {
             _quantityMultipliers.Clear();
             _needsRefresh = true;
+            if (_notesTextArea != null)
+            {
+                _notesTextArea.Text = RhinoDoc.ActiveDoc?.Notes ?? string.Empty;
+            }
         }
 
         private void OnAggregateChanged(object sender, EventArgs e)
@@ -378,11 +420,6 @@ namespace MyProject
             }
         }
 
-        /// <summary>
-        /// MODIFIED: This entire method is now guarded by your suggested logic.
-        /// It will only run if the mouse is physically over the grid control,
-        /// preventing it from interfering with viewport selection.
-        /// </summary>
         private void OnGridSelectionChanged(object sender, EventArgs e)
         {
             if (!_isMouseOverGrid) return;
@@ -400,7 +437,6 @@ namespace MyProject
             doc.Views.RedrawEnabled = false;
             try
             {
-                // Using the more robust, non-destructive logic to sync the viewport to the grid.
                 var gridSelectionIds = _userTextGridView.SelectedItems.SelectMany(entry => entry.ObjectIds).ToHashSet();
                 var rhinoSelectionIds = doc.Objects.GetSelectedObjects(false, false).Select(o => o.Id).ToHashSet();
 
@@ -421,12 +457,7 @@ namespace MyProject
             _isSyncingSelection = false;
         }
 
-
-        private void OnSelectionChanged(object sender, RhinoObjectSelectionEventArgs e) => UpdatePanelDataSafe();
-        private void OnDeselectAllObjects(object sender, RhinoDeselectAllObjectsEventArgs e) => UpdatePanelDataSafe();
-        private void OnDatabaseChanged(object sender, RhinoObjectEventArgs e) => UpdatePanelDataSafe();
-        private void OnReplaceObject(object sender, RhinoReplaceObjectEventArgs e) => UpdatePanelDataSafe();
-        private void OnUserStringChanged(object sender, RhinoDoc.UserStringChangedArgs e) => UpdatePanelDataSafe();
+        private void OnDocumentStateChanged(object sender, EventArgs e) => UpdatePanelDataSafe();
 
         private void UpdatePanelDataSafe()
         {
@@ -435,13 +466,13 @@ namespace MyProject
 
         protected override void Dispose(bool disposing)
         {
-            RhinoDoc.SelectObjects -= OnSelectionChanged;
-            RhinoDoc.DeselectObjects -= OnSelectionChanged;
-            RhinoDoc.DeselectAllObjects -= OnDeselectAllObjects;
-            RhinoDoc.AddRhinoObject -= OnDatabaseChanged;
-            RhinoDoc.DeleteRhinoObject -= OnDatabaseChanged;
-            RhinoDoc.ReplaceRhinoObject -= OnReplaceObject;
-            RhinoDoc.UserStringChanged -= OnUserStringChanged;
+            RhinoDoc.SelectObjects -= OnDocumentStateChanged;
+            RhinoDoc.DeselectObjects -= OnDocumentStateChanged;
+            RhinoDoc.DeselectAllObjects -= OnDocumentStateChanged;
+            RhinoDoc.AddRhinoObject -= OnDocumentStateChanged;
+            RhinoDoc.DeleteRhinoObject -= OnDocumentStateChanged;
+            RhinoDoc.ReplaceRhinoObject -= OnDocumentStateChanged;
+            RhinoDoc.UserStringChanged -= OnDocumentStateChanged;
             RhinoDoc.EndOpenDocument -= OnDocumentChanged;
             RhinoDoc.NewDocument -= OnDocumentChanged;
             RhinoApp.Idle -= OnRhinoIdle;
@@ -451,7 +482,6 @@ namespace MyProject
 
         #endregion
 
-        // The rest of the file remains unchanged from the original.
         #region Core Logic Methods
         private void UpdatePanelData() => Eto.Forms.Application.Instance.AsyncInvoke(UpdateUserTextGrid);
 
@@ -761,6 +791,14 @@ namespace MyProject
             if (geo == null || doc == null) return false;
 
             var unitAbbreviation = doc.GetUnitSystemName(true, true, false, true);
+
+            if (geo is Rhino.Geometry.Point)
+            {
+                quantityType = "Each";
+                quantity = 1.0;
+                unit = "ea.";
+                return true;
+            }
 
             if (TryGetVolume(geo, out quantity))
             {

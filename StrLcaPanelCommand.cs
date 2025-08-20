@@ -8,11 +8,11 @@ using System.Runtime.InteropServices;
 namespace MyProject
 {
     [Guid("D86F9756-3A83-42D6-BC64-16CF585D7576")]
-    public class MyProjectPanelCommand : Command
+    public class StrLcaPanelCommand : Command
     {
-        public MyProjectPanelCommand() { }
+        public StrLcaPanelCommand() { }
 
-        public override string EnglishName => "MyProjectPanelCommand";
+        public override string EnglishName => "StrLcaPanel";
 
         protected override Result RunCommand(RhinoDoc doc, RunMode mode)
         {

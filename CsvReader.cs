@@ -65,5 +65,44 @@ namespace MyProject
             }
             return materials;
         }
+
+        /// <summary>
+        /// Reads IFC classes from an embedded CSV resource file.
+        /// The CSV is expected to have a header row, and the class names are in the first column.
+        /// </summary>
+        /// <param name="resourceName">The fully qualified name of the embedded resource.</param>
+        /// <returns>A list of IFC class names.</returns>
+        public static List<string> ReadIfcClassesFromResource(string resourceName)
+        {
+            var ifcClasses = new List<string>();
+            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+
+            using (System.IO.Stream stream = assembly.GetManifestResourceStream(resourceName))
+            {
+                if (stream == null)
+                {
+                    Rhino.RhinoApp.WriteLine($"Error: Embedded resource '{resourceName}' not found.");
+                    return ifcClasses;
+                }
+
+                using (System.IO.StreamReader reader = new System.IO.StreamReader(stream))
+                {
+                    // Skip header
+                    reader.ReadLine();
+
+                    string line;
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        var parts = line.Split(',');
+                        if (parts.Length > 0 && !string.IsNullOrWhiteSpace(parts[0]))
+                        {
+                            ifcClasses.Add(parts[0].Trim());
+                        }
+                    }
+                }
+            }
+            return ifcClasses;
+        }
+
     }
 }

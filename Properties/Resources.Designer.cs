@@ -63,9 +63,9 @@ namespace MyProject.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
-        internal static byte[] assignIfcClass256 {
+        internal static byte[] btn_assignIfcClass256 {
             get {
-                object obj = ResourceManager.GetObject("assignIfcClass256", resourceCulture);
+                object obj = ResourceManager.GetObject("btn_assignIfcClass256", resourceCulture);
                 return ((byte[])(obj));
             }
         }
@@ -73,9 +73,9 @@ namespace MyProject.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
-        internal static byte[] assignMaterial256 {
+        internal static byte[] btn_assignMaterial256 {
             get {
-                object obj = ResourceManager.GetObject("assignMaterial256", resourceCulture);
+                object obj = ResourceManager.GetObject("btn_assignMaterial256", resourceCulture);
                 return ((byte[])(obj));
             }
         }
@@ -83,9 +83,9 @@ namespace MyProject.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
-        internal static byte[] columnsView {
+        internal static byte[] btn_columnsView256 {
             get {
-                object obj = ResourceManager.GetObject("columnsView", resourceCulture);
+                object obj = ResourceManager.GetObject("btn_columnsView256", resourceCulture);
                 return ((byte[])(obj));
             }
         }
@@ -93,9 +93,49 @@ namespace MyProject.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
-        internal static byte[] materialList {
+        internal static byte[] btn_removeIfcClass256 {
             get {
-                object obj = ResourceManager.GetObject("materialList", resourceCulture);
+                object obj = ResourceManager.GetObject("btn_removeIfcClass256", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] btn_removeMaterial256 {
+            get {
+                object obj = ResourceManager.GetObject("btn_removeMaterial256", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] btn_strLCA256 {
+            get {
+                object obj = ResourceManager.GetObject("btn_strLCA256", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] icon_strLCA32 {
+            get {
+                object obj = ResourceManager.GetObject("icon_strLCA32", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] ifcClassList {
+            get {
+                object obj = ResourceManager.GetObject("ifcClassList", resourceCulture);
                 return ((byte[])(obj));
             }
         }
@@ -106,46 +146,6 @@ namespace MyProject.Properties {
         internal static byte[] materialListWithUnits {
             get {
                 object obj = ResourceManager.GetObject("materialListWithUnits", resourceCulture);
-                return ((byte[])(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Byte[].
-        /// </summary>
-        internal static byte[] removeIfcClass256 {
-            get {
-                object obj = ResourceManager.GetObject("removeIfcClass256", resourceCulture);
-                return ((byte[])(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Byte[].
-        /// </summary>
-        internal static byte[] removeMaterial256 {
-            get {
-                object obj = ResourceManager.GetObject("removeMaterial256", resourceCulture);
-                return ((byte[])(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Byte[].
-        /// </summary>
-        internal static byte[] strLCA256 {
-            get {
-                object obj = ResourceManager.GetObject("strLCA256", resourceCulture);
-                return ((byte[])(obj));
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized resource of type System.Byte[].
-        /// </summary>
-        internal static byte[] strLCA32 {
-            get {
-                object obj = ResourceManager.GetObject("strLCA32", resourceCulture);
                 return ((byte[])(obj));
             }
         }

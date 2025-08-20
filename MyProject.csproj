@@ -15,11 +15,15 @@
   
   <PropertyGroup>
     <!-- Specifies information for Assembly and Yak -->
-    <Version>1.0</Version>
-    <Title>MyProject</Title>
-    <Company>MyProject Authors</Company>
-    <Description>Description of MyProject</Description>
+    <Version>1.0.0</Version>
+    <Title></Title>
+    <Company></Company>
+    <Description></Description>
     <ApplicationIcon>EmbeddedResources\strLCA32.ico</ApplicationIcon>
+    <Authors></Authors>
+    <Product></Product>
+    <Copyright></Copyright>
+    <PackageIcon></PackageIcon>
   </PropertyGroup>
   
   <ItemGroup>
@@ -29,14 +33,14 @@
     <None Remove="Resources\Buttons\assignIfcClass256.ico" />
     <None Remove="Resources\Buttons\assignMaterial256.ico" />
     <None Remove="Resources\columnsView.ico" />
-    <None Remove="Resources\materialList.csv" />
+    <None Remove="Resources\Data\ifcClassList.csv" />
+    <None Remove="Resources\Data\materialListWithUnits.csv" />
     <None Remove="Resources\materialListWithUnits.csv" />
     <None Remove="Resources\removeIfcClass256.ico" />
     <None Remove="Resources\removeMaterial256.ico" />
     <None Remove="Resources\strLCA16.png" />
     <None Remove="Resources\strLCA24.png" />
     <None Remove="Resources\strLCA256.ico" />
-    <None Remove="Resources\strLCA256.png" />
     <None Remove="Resources\strLCA32.ico" />
     <None Remove="Resources\strLCA32.png" />
     <None Remove="Resources\testIcon.svg" />
@@ -44,6 +48,12 @@
   
   <ItemGroup>
     <Content Include="EmbeddedResources\strLCA32.ico" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\Data\ifcClassList.csv">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </EmbeddedResource>
   </ItemGroup>
   
   <ItemGroup>
@@ -57,19 +67,16 @@
     <EmbeddedResource Include="Resources\Buttons\columnsView.ico">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </EmbeddedResource>
-    <EmbeddedResource Include="Resources\materialList.csv">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Resources\materialListWithUnits.csv">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </EmbeddedResource>
     <EmbeddedResource Include="Resources\Buttons\removeIfcClass256.ico">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </EmbeddedResource>
     <EmbeddedResource Include="Resources\Buttons\removeMaterial256.ico">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </EmbeddedResource>
-    <EmbeddedResource Include="Resources\strLCA256.ico">
+    <EmbeddedResource Include="Resources\Data\materialListWithUnits.csv">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\Buttons\strLCA256.ico">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </EmbeddedResource>
     <EmbeddedResource Include="Resources\strLCA32.ico">
@@ -80,8 +87,6 @@
   <ItemGroup>
     <PackageReference Include="Eto.Forms" Version="2.9.0" />
     <PackageReference Include="RhinoCommon" Version="8.21.25188.17001" ExcludeAssets="runtime" />
-    <PackageReference Include="SkiaSharp" Version="3.119.0" />
-    <PackageReference Include="Svg.Skia" Version="3.0.5" />
     <PackageReference Include="System.Drawing.Common" Version="9.0.8" />
     <PackageReference Include="System.Resources.Extensions" Version="9.0.8" />
   </ItemGroup>
@@ -104,6 +109,10 @@
   <ItemGroup>
     <None Update="Resources\strLCA.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Resources\strLCA256.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
     </None>
   </ItemGroup>
   
