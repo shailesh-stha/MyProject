@@ -23,6 +23,7 @@ namespace MyProject
         private readonly Dictionary<string, MaterialData> _materialLcaData;
         private readonly Dictionary<Guid, double> _quantityMultipliers = new Dictionary<Guid, double>();
         private readonly GridView<UserTextEntry> _userTextGridView;
+        private GridView<DocumentUserTextEntry> _docUserTextGridView;
         private readonly GridColumn _qtyMultiplierColumn;
         private readonly Label _totalLcaLabel;
         private readonly ComboBox _ifcDropdown;
@@ -37,6 +38,7 @@ namespace MyProject
         private TextArea _notesTextArea;
         private bool _isMouseOverGrid = false;
 
+        #region Data-Binding Classes
         private class UserTextEntry
         {
             public string SerialNumber { get; set; }
@@ -56,6 +58,13 @@ namespace MyProject
             public double Lca { get; set; }
             public List<Guid> ObjectIds { get; set; } = new List<Guid>();
         }
+
+        private class DocumentUserTextEntry
+        {
+            public string Key { get; set; }
+            public string Value { get; set; }
+        }
+        #endregion
 
         public MyProjectPanel(uint documentSerialNumber)
         {
@@ -85,17 +94,45 @@ namespace MyProject
 
             mainLayout.Add(CreateUpperLayout());
             mainLayout.Add(new Divider());
-            mainLayout.Add(CreateIfcDefinitionLayout());
-            mainLayout.Add(new Divider());
-            mainLayout.Add(CreateMaterialDefinitionLayout());
-            mainLayout.Add(new Divider());
-            mainLayout.Add(CreateDataLayout());
-            mainLayout.Add(new Divider());
-            mainLayout.Add(CreateNotesLayout());
-            mainLayout.Add(new Divider());
+
+            mainLayout.Add(new Expander
+            {
+                Header = new Label { Text = "IFC Class Definition", Style = "bold_label" },
+                Content = CreateIfcDefinitionLayout(),
+                Expanded = true
+            });
+
+            mainLayout.Add(new Expander
+            {
+                Header = new Label { Text = "Material Definition", Style = "bold_label" },
+                Content = CreateMaterialDefinitionLayout(),
+                Expanded = true
+            });
+
+            mainLayout.Add(new Expander
+            {
+                Header = new Label { Text = "Attribute User Text", Style = "bold_label" },
+                Content = CreateDataLayout(),
+                Expanded = true
+            });
+
+            mainLayout.Add(new Expander
+            {
+                Header = new Label { Text = "Document Notes", Style = "bold_label" },
+                Content = CreateNotesLayout(),
+                Expanded = false
+            });
+
+            mainLayout.Add(new Expander
+            {
+                Header = new Label { Text = "Document User Text", Style = "bold_label" },
+                Content = CreateDocumentUserTextLayout(),
+                Expanded = false
+            });
+
             mainLayout.Add(null, true);
 
-            Content = mainLayout;
+            Content = new Scrollable { Content = mainLayout, Border = BorderType.None };
             MinimumSize = new Size(400, 550);
 
             RegisterEventHandlers();
@@ -137,7 +174,6 @@ namespace MyProject
         private Control CreateNotesLayout()
         {
             var notesLayout = new DynamicLayout { Spacing = new Size(6, 6) };
-            notesLayout.AddRow(new Label { Text = "Document Notes", Style = "bold_label" });
 
             _notesTextArea = new TextArea
             {
@@ -167,8 +203,41 @@ namespace MyProject
             return notesLayout;
         }
 
+        private Control CreateDocumentUserTextLayout()
+        {
+            var layout = new DynamicLayout { Spacing = new Size(6, 6) };
+
+            _docUserTextGridView = new GridView<DocumentUserTextEntry>
+            {
+                ShowHeader = true,
+                Height = 100
+            };
+
+            _docUserTextGridView.Columns.Add(new GridColumn
+            {
+                HeaderText = "Key",
+                DataCell = new TextBoxCell(nameof(DocumentUserTextEntry.Key)),
+                Editable = false,
+                Width = 150
+            });
+            _docUserTextGridView.Columns.Add(new GridColumn
+            {
+                HeaderText = "Value",
+                DataCell = new TextBoxCell(nameof(DocumentUserTextEntry.Value)),
+                Editable = false
+            });
+
+            var refreshButton = new Button { Text = "Refresh" };
+            refreshButton.Click += (s, e) => UpdatePanelData();
+
+            layout.AddRow(new Scrollable { Content = _docUserTextGridView });
+            layout.AddRow(null, refreshButton);
+            return layout;
+        }
+
         private Control CreateIfcDefinitionLayout()
         {
+            _ifcDropdown.Items.Clear();
             _ifcDropdown.Items.Add(new ListItem { Text = "" });
             _ifcClasses.ForEach(cls => _ifcDropdown.Items.Add(new ListItem { Text = cls }));
 
@@ -179,7 +248,7 @@ namespace MyProject
                 MinimumSize = Size.Empty,
                 ImagePosition = ButtonImagePosition.Left
             };
-            assignButton.Click += (s, e) => AssignUserString("str-ifcclass", _ifcDropdown.SelectedValue as ListItem);
+            assignButton.Click += (s, e) => AssignUserString("STR_IFC_CLASS", _ifcDropdown.SelectedValue as ListItem);
 
             var removeIfcClassIcon = BytesToEtoBitmap(Resources.btn_removeIfcClass256, new Size(18, 18));
             var removeButton = new Button
@@ -188,7 +257,7 @@ namespace MyProject
                 MinimumSize = Size.Empty,
                 ImagePosition = ButtonImagePosition.Left
             };
-            removeButton.Click += (s, e) => RemoveUserString("str-ifcclass");
+            removeButton.Click += (s, e) => RemoveUserString("STR_IFC_CLASS");
 
             var buttonsLayout = new StackLayout
             {
@@ -198,13 +267,13 @@ namespace MyProject
             };
 
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
-            layout.AddRow(new Label { Text = "IFC Class Definition", Style = "bold_label" });
             layout.AddRow(new Label { Text = "Select IfcClass:" }, _ifcDropdown, buttonsLayout);
             return layout;
         }
 
         private Control CreateMaterialDefinitionLayout()
         {
+            _materialDropdown.Items.Clear();
             _materialDropdown.Items.Add(new ListItem { Text = "" });
             _materialLcaData.Keys.ToList().ForEach(m => _materialDropdown.Items.Add(new ListItem { Text = m }));
 
@@ -215,7 +284,7 @@ namespace MyProject
                 MinimumSize = Size.Empty,
                 ImagePosition = ButtonImagePosition.Left
             };
-            assignButton.Click += (s, e) => AssignUserString("str-material", _materialDropdown.SelectedValue as ListItem);
+            assignButton.Click += (s, e) => AssignUserString("STR_MATERIAL", _materialDropdown.SelectedValue as ListItem);
 
             var removeMaterialIcon = BytesToEtoBitmap(Resources.btn_removeMaterial256, new Size(16, 16));
             var removeButton = new Button
@@ -224,7 +293,7 @@ namespace MyProject
                 MinimumSize = Size.Empty,
                 ImagePosition = ButtonImagePosition.Left
             };
-            removeButton.Click += (s, e) => RemoveUserString("str-material");
+            removeButton.Click += (s, e) => RemoveUserString("STR_MATERIAL");
 
             var buttonsLayout = new StackLayout
             {
@@ -234,36 +303,45 @@ namespace MyProject
             };
 
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
-            layout.AddRow(new Label { Text = "Material Definition", Style = "bold_label" });
             layout.AddRow(new Label { Text = "Select Material:" }, _materialDropdown, buttonsLayout);
             return layout;
         }
 
         private Control CreateDataLayout()
         {
-            _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.SerialNumber)), HeaderText = "SN", Editable = false, Width = 30 });
-            _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.IfcClass)), HeaderText = "IfcClass", Editable = false, Width = 65 });
-            _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.Value)), HeaderText = "Material (Name)", Editable = false, Width = 150 });
-            _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.DisplayReference)) { TextAlignment = TextAlignment.Right }, HeaderText = "Ref. Qty.", Editable = false, Width = 70 });
-            _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Eto.Forms.Binding.Property<UserTextEntry, string>(entry => $"{entry.ReferenceLca:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "Ref. LCA", Editable = false, Width = 70 });
-            _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.Count)) { TextAlignment = TextAlignment.Right }, HeaderText = "Count", Editable = false, Width = 50, Visible = false });
-            _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.DisplayQuantity)) { TextAlignment = TextAlignment.Right }, HeaderText = "Qty. (Rh)", Editable = false, Width = 75 });
-            _userTextGridView.Columns.Add(_qtyMultiplierColumn);
-            _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Eto.Forms.Binding.Property<UserTextEntry, string>(entry => $"{entry.QuantityTotal:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "Qty. Total", Editable = false, Width = 75 });
-            _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Eto.Forms.Binding.Property<UserTextEntry, string>(entry => $"{entry.Lca:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "LCA (kgCO2 eq)", Editable = false, Width = 100 });
+            if (_userTextGridView.Columns.Count == 0)
+            {
+                _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.SerialNumber)), HeaderText = "SN", Editable = false, Width = 30 });
+                _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.IfcClass)), HeaderText = "IfcClass", Editable = false, Width = 65 });
+                _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.Value)), HeaderText = "Material (Name)", Editable = false, Width = 150 });
+                _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.DisplayReference)) { TextAlignment = TextAlignment.Right }, HeaderText = "Ref. Qty.", Editable = false, Width = 70 });
+                _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Eto.Forms.Binding.Property<UserTextEntry, string>(entry => $"{entry.ReferenceLca:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "Ref. LCA", Editable = false, Width = 70 });
+                _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.Count)) { TextAlignment = TextAlignment.Right }, HeaderText = "Count", Editable = false, Width = 50, Visible = false });
+                _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.DisplayQuantity)) { TextAlignment = TextAlignment.Right }, HeaderText = "Qty. (Rh)", Editable = false, Width = 75 });
+                _userTextGridView.Columns.Add(_qtyMultiplierColumn);
+                _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Eto.Forms.Binding.Property<UserTextEntry, string>(entry => $"{entry.QuantityTotal:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "Qty. Total", Editable = false, Width = 75 });
+                _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Eto.Forms.Binding.Property<UserTextEntry, string>(entry => $"{entry.Lca:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "LCA (kgCO2 eq)", Editable = false, Width = 100 });
+            }
 
             _qtyMultiplierColumn.Visible = !_aggregateCheckBox.Checked ?? true;
 
-            _showAllObjectsCheckBox.CheckedChanged += (s, e) => UpdatePanelData();
-            _showUnassignedCheckBox.CheckedChanged += (s, e) => UpdatePanelData();
+            _showAllObjectsCheckBox.CheckedChanged -= UpdatePanelData;
+            _showAllObjectsCheckBox.CheckedChanged += UpdatePanelData;
+            _showUnassignedCheckBox.CheckedChanged -= UpdatePanelData;
+            _showUnassignedCheckBox.CheckedChanged += UpdatePanelData;
+            _aggregateCheckBox.CheckedChanged -= OnAggregateChanged;
             _aggregateCheckBox.CheckedChanged += OnAggregateChanged;
+            _groupByMaterialCheckBox.CheckedChanged -= OnGroupByMaterialChanged;
             _groupByMaterialCheckBox.CheckedChanged += OnGroupByMaterialChanged;
+            _groupByClassCheckBox.CheckedChanged -= OnGroupByClassChanged;
             _groupByClassCheckBox.CheckedChanged += OnGroupByClassChanged;
-
+            _userTextGridView.SelectionChanged -= OnGridSelectionChanged;
             _userTextGridView.SelectionChanged += OnGridSelectionChanged;
+            _userTextGridView.CellEdited -= OnGridCellEdited;
             _userTextGridView.CellEdited += OnGridCellEdited;
-
+            _userTextGridView.MouseEnter -= (s, e) => _isMouseOverGrid = true;
             _userTextGridView.MouseEnter += (s, e) => _isMouseOverGrid = true;
+            _userTextGridView.MouseLeave -= (s, e) => _isMouseOverGrid = false;
             _userTextGridView.MouseLeave += (s, e) => _isMouseOverGrid = false;
 
             var scrollableGrid = new Scrollable { Content = _userTextGridView, Height = 250 };
@@ -283,7 +361,7 @@ namespace MyProject
             btnSelectUnassigned.Click += OnSelectUnassignedClick;
 
             var gridHeaderLayout = new DynamicLayout { Spacing = new Size(6, 6) };
-            gridHeaderLayout.AddRow(new Label { Text = "Attribute User Text", Style = "bold_label" }, null, btnSelectUnassigned, btnTableColumns);
+            gridHeaderLayout.AddRow(null, btnSelectUnassigned, btnTableColumns);
 
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
             layout.AddRow(gridHeaderLayout);
@@ -354,7 +432,6 @@ namespace MyProject
 
         private void OnAggregateChanged(object sender, EventArgs e)
         {
-            _qtyMultiplierColumn.Visible = !_aggregateCheckBox.Checked ?? true;
             UpdatePanelData();
         }
 
@@ -385,29 +462,21 @@ namespace MyProject
             var idsToSelect = doc.Objects.Where(o => o.IsSelectable(true, false, false, true) &&
                                                      o.Attributes.Visible &&
                                                      doc.Layers[o.Attributes.LayerIndex].IsVisible &&
-                                                     string.IsNullOrWhiteSpace(o.Attributes.GetUserString("str-material")))
+                                                     string.IsNullOrWhiteSpace(o.Attributes.GetUserString("STR_MATERIAL")))
                                         .Select(o => o.Id)
                                         .ToList();
 
-            doc.Views.RedrawEnabled = false;
-            try
+            doc.Objects.UnselectAll();
+            if (idsToSelect.Any())
             {
-                doc.Objects.UnselectAll();
-                if (idsToSelect.Any())
-                {
-                    doc.Objects.Select(idsToSelect, true);
-                    RhinoApp.WriteLine($"{idsToSelect.Count} unassigned object(s) selected.");
-                }
-                else
-                {
-                    RhinoApp.WriteLine("No unassigned objects found.");
-                }
+                doc.Objects.Select(idsToSelect, true);
+                RhinoApp.WriteLine($"{idsToSelect.Count} unassigned object(s) selected.");
             }
-            finally
+            else
             {
-                doc.Views.RedrawEnabled = true;
-                doc.Views.Redraw();
+                RhinoApp.WriteLine("No unassigned objects found.");
             }
+            doc.Views.Redraw();
         }
 
         private void OnGridCellEdited(object sender, GridViewCellEventArgs e)
@@ -422,38 +491,31 @@ namespace MyProject
 
         private void OnGridSelectionChanged(object sender, EventArgs e)
         {
-            if (!_isMouseOverGrid) return;
-
-            if (_isSyncingSelection) return;
+            if (!_isMouseOverGrid || _isSyncingSelection) return;
             _isSyncingSelection = true;
 
             var doc = RhinoDoc.ActiveDoc;
-            if (doc == null)
-            {
-                _isSyncingSelection = false;
-                return;
-            }
-
-            doc.Views.RedrawEnabled = false;
-            try
+            if (doc != null)
             {
                 var gridSelectionIds = _userTextGridView.SelectedItems.SelectMany(entry => entry.ObjectIds).ToHashSet();
                 var rhinoSelectionIds = doc.Objects.GetSelectedObjects(false, false).Select(o => o.Id).ToHashSet();
 
                 var idsToSelect = gridSelectionIds.Except(rhinoSelectionIds).ToList();
-                var idsToDeselect = rhinoSelectionIds.Except(gridSelectionIds).ToList();
-
                 if (idsToSelect.Any()) doc.Objects.Select(idsToSelect, true);
+
+                var idsToDeselect = rhinoSelectionIds.Except(gridSelectionIds).ToList();
+                // MODIFIED: Replaced Unselect() with a backward-compatible loop.
                 if (idsToDeselect.Any())
                 {
-                    foreach (var id in idsToDeselect) doc.Objects.Select(id, false);
+                    foreach (var id in idsToDeselect)
+                    {
+                        doc.Objects.Select(id, false);
+                    }
                 }
-            }
-            finally
-            {
-                doc.Views.RedrawEnabled = true;
+
                 doc.Views.Redraw();
             }
+
             _isSyncingSelection = false;
         }
 
@@ -483,28 +545,28 @@ namespace MyProject
         #endregion
 
         #region Core Logic Methods
-        private void UpdatePanelData() => Eto.Forms.Application.Instance.AsyncInvoke(UpdateUserTextGrid);
+        private void UpdatePanelData(object sender = null, EventArgs e = null) => Eto.Forms.Application.Instance.AsyncInvoke(UpdateUserTextGrid);
 
         private void UpdateUserTextGrid()
         {
             var doc = RhinoDoc.ActiveDoc;
+            UpdateDocumentUserTextGrid(doc);
+
             if (doc == null)
             {
-                _userTextGridView.DataStore = new List<UserTextEntry>();
+                _userTextGridView.DataStore = null;
                 _totalLcaLabel.Text = "Total LCA: 0.00";
-                _userTextGridView.Invalidate();
                 return;
             }
 
             var objectsToProcess = (_showAllObjectsCheckBox.Checked == true
-                ? doc.Objects.Where(obj => obj.Attributes.Visible && doc.Layers[obj.Attributes.LayerIndex].IsVisible)
+                ? doc.Objects.Where(obj => obj.IsSelectable(true, false, false, true) && obj.Attributes.Visible && doc.Layers[obj.Attributes.LayerIndex].IsVisible)
                 : doc.Objects.GetSelectedObjects(false, false)).ToList();
 
             if (!objectsToProcess.Any())
             {
-                _userTextGridView.DataStore = new List<UserTextEntry>();
+                _userTextGridView.DataStore = null;
                 _totalLcaLabel.Text = "Total LCA: 0.00";
-                _userTextGridView.Invalidate();
                 return;
             }
 
@@ -514,8 +576,8 @@ namespace MyProject
                 return new
                 {
                     RhinoObject = o,
-                    Material = o.Attributes.GetUserString("str-material") ?? "N/A",
-                    IfcClass = o.Attributes.GetUserString("str-ifcclass") ?? "N/A",
+                    Material = o.Attributes.GetUserString("STR_MATERIAL") ?? "N/A",
+                    IfcClass = o.Attributes.GetUserString("STR_IFC_CLASS") ?? "N/A",
                     Quantity = qty,
                     QuantityUnit = unit,
                     QuantityType = qtyType,
@@ -534,25 +596,16 @@ namespace MyProject
                         var first = g.First();
                         var totalQuantity = g.Sum(p => p.Quantity);
                         var totalLca = 0.0;
-                        var refQuantity = 0.0;
-                        var refUnit = "";
-                        var refLca = 0.0;
-
-                        if (g.Key.QuantityType != "N/A" && _materialLcaData.TryGetValue(g.Key.Material, out MaterialData materialData))
-                        {
-                            totalLca = totalQuantity * materialData.Lca;
-                            refQuantity = materialData.ReferenceQuantity;
-                            refUnit = materialData.ReferenceUnit;
-                            refLca = materialData.Lca;
-                        }
+                        _materialLcaData.TryGetValue(g.Key.Material, out MaterialData materialData);
+                        if (materialData != null && g.Key.QuantityType != "N/A") totalLca = totalQuantity * materialData.Lca;
 
                         return new UserTextEntry
                         {
                             Value = g.Key.Material,
                             IfcClass = g.Key.IfcClass,
-                            ReferenceQuantity = refQuantity,
-                            ReferenceUnit = refUnit,
-                            ReferenceLca = refLca,
+                            ReferenceQuantity = materialData?.ReferenceQuantity ?? 0,
+                            ReferenceUnit = materialData?.ReferenceUnit ?? "",
+                            ReferenceLca = materialData?.Lca ?? 0,
                             Count = g.Count(),
                             Quantity = totalQuantity,
                             QuantityUnit = first.QuantityUnit,
@@ -561,7 +614,6 @@ namespace MyProject
                             ObjectIds = g.Select(p => p.RhinoObject.Id).ToList()
                         };
                     });
-
                 gridData = SortAndFormatData(aggregatedData.ToList());
             }
             else
@@ -569,25 +621,16 @@ namespace MyProject
                 var data = processedObjects.Select(p =>
                 {
                     double lca = 0.0;
-                    double refQuantity = 0.0;
-                    string refUnit = "";
-                    double refLca = 0.0;
-
-                    if (p.QuantityType != "N/A" && _materialLcaData.TryGetValue(p.Material, out MaterialData materialData))
-                    {
-                        lca = (p.Quantity * p.QuantityMultiplier) * materialData.Lca;
-                        refQuantity = materialData.ReferenceQuantity;
-                        refUnit = materialData.ReferenceUnit;
-                        refLca = materialData.Lca;
-                    }
+                    _materialLcaData.TryGetValue(p.Material, out MaterialData materialData);
+                    if (materialData != null && p.QuantityType != "N/A") lca = (p.Quantity * p.QuantityMultiplier) * materialData.Lca;
 
                     return new UserTextEntry
                     {
                         Value = p.Material,
                         IfcClass = p.IfcClass,
-                        ReferenceQuantity = refQuantity,
-                        ReferenceUnit = refUnit,
-                        ReferenceLca = refLca,
+                        ReferenceQuantity = materialData?.ReferenceQuantity ?? 0,
+                        ReferenceUnit = materialData?.ReferenceUnit ?? "",
+                        ReferenceLca = materialData?.Lca ?? 0,
                         Count = 1,
                         Quantity = p.Quantity,
                         QuantityUnit = p.QuantityUnit,
@@ -597,20 +640,51 @@ namespace MyProject
                         ObjectIds = new List<Guid> { p.RhinoObject.Id }
                     };
                 });
-
                 gridData = SortAndFormatData(data.ToList());
             }
 
             if (_showUnassignedCheckBox.Checked == false)
             {
-                gridData.RemoveAll(entry => entry.Value == "N/A" && entry.IfcClass == "N/A");
+                gridData.RemoveAll(entry => entry.Value == "N/A");
             }
 
             _userTextGridView.DataStore = gridData;
             _totalLcaLabel.Text = $"Total LCA: {gridData.Sum(entry => entry.Lca):0.00} kgCO2 eq";
-            _userTextGridView.Invalidate();
 
             SyncGridSelectionWithRhino();
+        }
+
+        private void UpdateDocumentUserTextGrid(RhinoDoc doc)
+        {
+            if (doc == null || _docUserTextGridView == null)
+            {
+                if (_docUserTextGridView != null) _docUserTextGridView.DataStore = null;
+                return;
+            }
+
+            var docStrings = doc.Strings;
+            var keyCount = docStrings.Count;
+            if (keyCount == 0)
+            {
+                _docUserTextGridView.DataStore = null;
+            }
+            else
+            {
+                var data = new List<DocumentUserTextEntry>(keyCount);
+                for (int i = 0; i < keyCount; i++)
+                {
+                    var key = docStrings.GetKey(i);
+                    if (!string.IsNullOrEmpty(key))
+                    {
+                        data.Add(new DocumentUserTextEntry
+                        {
+                            Key = key,
+                            Value = docStrings.GetValue(key)
+                        });
+                    }
+                }
+                _docUserTextGridView.DataStore = data.OrderBy(d => d.Key).ToList();
+            }
         }
 
         private List<UserTextEntry> SortAndFormatData(List<UserTextEntry> data)
@@ -640,12 +714,7 @@ namespace MyProject
 
                 item.SerialNumber = isFirstInGroup ? $"{serialNumber++}." : "";
 
-                if (isFirstInGroup)
-                {
-                    if (_groupByClassCheckBox.Checked == true) item.Value = item.Value;
-                    else if (_groupByMaterialCheckBox.Checked == true) item.IfcClass = item.IfcClass;
-                }
-                else
+                if (!isFirstInGroup)
                 {
                     if (_groupByClassCheckBox.Checked == true) item.IfcClass = "";
                     else if (_groupByMaterialCheckBox.Checked == true) item.Value = "";
@@ -667,18 +736,17 @@ namespace MyProject
 
         private void SyncGridSelectionWithRhino()
         {
+            if (_isSyncingSelection) return;
             _isSyncingSelection = true;
-            try
-            {
-                var doc = RhinoDoc.ActiveDoc;
-                if (doc == null) return;
 
+            var doc = RhinoDoc.ActiveDoc;
+            if (doc != null)
+            {
                 var selectedObjectIds = doc.Objects.GetSelectedObjects(false, false).Select(o => o.Id).ToHashSet();
                 var rowsToSelect = new List<int>();
 
-                if (_userTextGridView.DataStore != null)
+                if (_userTextGridView.DataStore is List<UserTextEntry> dataStoreList)
                 {
-                    var dataStoreList = _userTextGridView.DataStore.ToList();
                     for (int i = 0; i < dataStoreList.Count; i++)
                     {
                         if (dataStoreList[i].ObjectIds.Any(selectedObjectIds.Contains))
@@ -687,13 +755,9 @@ namespace MyProject
                         }
                     }
                 }
-
                 _userTextGridView.SelectedRows = rowsToSelect;
             }
-            finally
-            {
-                _isSyncingSelection = false;
-            }
+            _isSyncingSelection = false;
         }
 
         private void AssignUserString(string key, ListItem selectedItem)
@@ -719,12 +783,17 @@ namespace MyProject
             foreach (var rhinoObject in selectedObjects)
             {
                 var newAttributes = rhinoObject.Attributes.Duplicate();
-                newAttributes.SetUserString(key, value);
-                if (doc.Objects.ModifyAttributes(rhinoObject.Id, newAttributes, false)) updatedCount++;
+                if (newAttributes.SetUserString(key, value))
+                {
+                    if (doc.Objects.ModifyAttributes(rhinoObject.Id, newAttributes, false)) updatedCount++;
+                }
             }
 
-            doc.Views.Redraw();
-            RhinoApp.WriteLine($"Successfully assigned '{value}' to {updatedCount} object(s).");
+            if (updatedCount > 0)
+            {
+                RhinoApp.WriteLine($"Successfully assigned '{value}' to {updatedCount} object(s).");
+                doc.Views.Redraw();
+            }
         }
 
         private void RemoveUserString(string key)
@@ -752,8 +821,8 @@ namespace MyProject
 
             if (updatedCount > 0)
             {
-                doc.Views.Redraw();
                 RhinoApp.WriteLine($"Successfully removed '{key.Substring(4)}' definition from {updatedCount} object(s).");
+                doc.Views.Redraw();
             }
             else
             {
@@ -765,7 +834,6 @@ namespace MyProject
         {
             var ifcClassColumn = _userTextGridView.Columns.FirstOrDefault(c => c.HeaderText == "IfcClass");
             var materialNameColumn = _userTextGridView.Columns.FirstOrDefault(c => c.HeaderText == "Material (Name)");
-
             if (ifcClassColumn == null || materialNameColumn == null) return;
 
             int ifcIndex = _userTextGridView.Columns.IndexOf(ifcClassColumn);
@@ -773,13 +841,11 @@ namespace MyProject
 
             if (groupByMaterial && ifcIndex < materialIndex)
             {
-                _userTextGridView.Columns.RemoveAt(ifcIndex);
-                _userTextGridView.Columns.Insert(materialIndex, ifcClassColumn);
+                _userTextGridView.Columns.Move(ifcIndex, materialIndex);
             }
-            else if (!groupByMaterial && ifcIndex > materialIndex)
+            else if (!groupByMaterial && materialIndex < ifcIndex)
             {
-                _userTextGridView.Columns.RemoveAt(ifcIndex);
-                _userTextGridView.Columns.Insert(materialIndex, ifcClassColumn);
+                _userTextGridView.Columns.Move(ifcIndex, materialIndex);
             }
         }
 
@@ -799,28 +865,24 @@ namespace MyProject
                 unit = "ea.";
                 return true;
             }
-
             if (TryGetVolume(geo, out quantity))
             {
                 quantityType = "Volume";
                 unit = $"{unitAbbreviation}³";
                 return true;
             }
-
             if (TryGetArea(geo, out quantity))
             {
                 quantityType = "Area";
                 unit = $"{unitAbbreviation}²";
                 return true;
             }
-
             if (TryGetLength(geo, out quantity))
             {
                 quantityType = "Length";
                 unit = unitAbbreviation;
                 return true;
             }
-
             return false;
         }
 
@@ -833,8 +895,10 @@ namespace MyProject
                     quantity = brep.GetVolume();
                     break;
                 case Extrusion extrusion:
+                    // MODIFIED: Replaced GetVolume() with the compatible ToBrep().GetVolume()
                     var brepFromExtrusion = extrusion.ToBrep();
-                    if (brepFromExtrusion != null && brepFromExtrusion.IsSolid) quantity = brepFromExtrusion.GetVolume();
+                    if (brepFromExtrusion != null && brepFromExtrusion.IsSolid)
+                        quantity = brepFromExtrusion.GetVolume();
                     break;
                 case Mesh mesh when mesh.IsClosed:
                     quantity = mesh.Volume();
@@ -847,6 +911,7 @@ namespace MyProject
         {
             quantity = 0.0;
             AreaMassProperties amp = null;
+            // MODIFIED: Replaced Compute(geo) with a switch for specific types.
             switch (geo)
             {
                 case Brep brep: amp = AreaMassProperties.Compute(brep); break;
@@ -861,10 +926,9 @@ namespace MyProject
         private bool TryGetLength(GeometryBase geo, out double quantity)
         {
             quantity = 0.0;
-            if (geo is Curve curveForLength) quantity = curveForLength.GetLength();
+            if (geo is Curve curve) quantity = curve.GetLength();
             return quantity > 1e-9;
         }
-
         #endregion
     }
 }

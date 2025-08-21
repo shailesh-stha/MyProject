@@ -28,7 +28,7 @@ namespace MyProject
             Icon panelIcon = BytesToIcon(Properties.Resources.icon_strLCA32);
 
             // Pass the newly created Icon object to the RegisterPanel method
-            Panels.RegisterPanel(this, typeof(MyProjectPanel), "MyProjectPanel", panelIcon);
+            Panels.RegisterPanel(this, typeof(MyProjectPanel), "⌨ ◀◀ StrLcaPro ▶▶", panelIcon);
             return LoadReturnCode.Success;
         }
 
