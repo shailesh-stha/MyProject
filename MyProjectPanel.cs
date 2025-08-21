@@ -3,7 +3,6 @@ using Eto.Drawing;
 using Eto.Forms;
 using MyProject.Properties;
 using Rhino;
-using Rhino.DocObjects;
 using Rhino.Geometry;
 using Rhino.UI.Controls;
 using System;
@@ -12,6 +11,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Globalization;
 
 namespace MyProject
 {
@@ -28,17 +28,22 @@ namespace MyProject
         #endregion
 
         #region Private Fields
-        private List<string> _ifcClasses = new List<string>();
+        // Updated to support hierarchical IFC classes
+        private Dictionary<string, List<string>> _ifcClasses = new Dictionary<string, List<string>>();
         private readonly Dictionary<string, MaterialData> _materialLcaData;
         private readonly Dictionary<Guid, double> _quantityMultipliers = new Dictionary<Guid, double>();
 
-        // UI Controls are initialized here instead of in the constructor for clarity.
+        // UI Controls
         private readonly GridView<UserTextEntry> _userTextGridView = new GridView<UserTextEntry> { ShowHeader = true, AllowMultipleSelection = true, Width = 550 };
         private readonly GridView<DocumentUserTextEntry> _docUserTextGridView = new GridView<DocumentUserTextEntry> { ShowHeader = true, Height = 100, Width = 550 };
         private readonly GridColumn _qtyMultiplierColumn = new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.QuantityMultiplier)) { TextAlignment = TextAlignment.Right }, HeaderText = "Qty. Multiplier", Editable = true, Width = 90 };
         private readonly Label _totalLcaLabel = new Label { Text = "Total LCA: 0.00" };
-        private readonly ComboBox _ifcDropdown = new ComboBox { Width = 180, AutoComplete = true };
-        private readonly ComboBox _materialDropdown = new ComboBox { Width = 180, AutoComplete = true };
+        
+        // --- Dropdown widths updated from 180 to 90 ---
+        private readonly ComboBox _ifcDropdown = new ComboBox { Width = 90, AutoComplete = true };
+        private readonly ComboBox _ifcSubclassDropdown = new ComboBox { Width = 90, AutoComplete = true };
+        private readonly ComboBox _materialDropdown = new ComboBox { Width = 90, AutoComplete = true };
+        
         private readonly CheckBox _showAllObjectsCheckBox = new CheckBox { Text = "Show All/Selected", Checked = true };
         private readonly CheckBox _showUnassignedCheckBox = new CheckBox { Text = "Show/Hide Unassigned", Checked = true };
         private readonly CheckBox _groupByMaterialCheckBox = new CheckBox { Text = "Group by Material", Checked = false };
@@ -79,12 +84,7 @@ namespace MyProject
         }
         #endregion
 
-        /// <summary>
-        /// Constructor for the panel. Required by the Rhino panel framework.
-        /// </summary>
-#pragma warning disable IDE0060 // Remove unused parameter
-        public MyProjectPanel(uint documentSerialNumber)
-#pragma warning restore IDE0060 // Remove unused parameter
+        public MyProjectPanel()
         {
             _materialLcaData = CsvReader.ReadMaterialLcaDataFromResource("MyProject.Resources.Data.materialListWithUnits.csv");
 
@@ -95,15 +95,12 @@ namespace MyProject
             UpdatePanelData();
         }
 
-        /// <summary>
-        /// Sets up the entire UI layout for the panel.
-        /// </summary>
         private void InitializeLayout()
         {
             Styles.Add<Label>("bold_label", label =>
             {
                 label.Font = SystemFonts.Bold();
-                _totalLcaLabel.Font = label.Font; // Apply style to total label as well
+                _totalLcaLabel.Font = label.Font;
             });
 
             var mainLayout = new DynamicLayout { Spacing = new Size(6, 6), Padding = new Padding(10) };
@@ -146,14 +143,7 @@ namespace MyProject
         private Control CreateUtilityButtonsLayout()
         {
             var structureIcon = BytesToEtoBitmap(Resources.btn_strLCA256, new Size(18, 18));
-            var btnStructure = new Button
-            {
-                Image = structureIcon,
-                ToolTip = "Visit str-ucture.com",
-                MinimumSize = Size.Empty,
-                ImagePosition = ButtonImagePosition.Left
-            };
-
+            var btnStructure = new Button { Image = structureIcon, ToolTip = "Visit str-ucture.com", MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
             btnStructure.Click += (s, e) =>
             {
                 var url = "http://www.str-ucture.com";
@@ -165,7 +155,7 @@ namespace MyProject
             {
                 Orientation = Orientation.Horizontal,
                 Spacing = 5,
-                Items = { null, btnStructure }
+                Items = { btnStructure }
             };
 
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
@@ -177,7 +167,6 @@ namespace MyProject
         {
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
 
-            // --- Document Notes Part ---
             _notesTextArea = new TextArea
             {
                 Width = 550,
@@ -197,10 +186,9 @@ namespace MyProject
             };
 
             layout.AddRow(_notesTextArea);
-            layout.AddRow(saveButton, null);
+            layout.AddRow(saveButton);
             layout.Add(new Divider());
 
-            // --- Document User Text Part ---
             _docUserTextGridView.Columns.Add(new GridColumn { HeaderText = "Key", DataCell = new TextBoxCell(nameof(DocumentUserTextEntry.Key)), Editable = false, Width = 150 });
             _docUserTextGridView.Columns.Add(new GridColumn { HeaderText = "Value", DataCell = new TextBoxCell(nameof(DocumentUserTextEntry.Value)), Editable = false });
             var refreshButton = new Button { Text = "Refresh User Text" };
@@ -217,29 +205,32 @@ namespace MyProject
 
             // --- IFC Class Part ---
             var assignIfcButton = new Button { Image = BytesToEtoBitmap(Resources.btn_assignIfcClass256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
-            assignIfcButton.Click += (s, e) => AssignUserString(IfcClassKey, "IfcClass", _ifcDropdown.SelectedValue as ListItem);
+            assignIfcButton.Click += OnAssignIfcClassClick;
             var removeIfcButton = new Button { Image = BytesToEtoBitmap(Resources.btn_removeIfcClass256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
             removeIfcButton.Click += (s, e) => RemoveUserString(IfcClassKey, "IfcClass");
             var refreshIfcButton = new Button { Text = "Refresh" };
             refreshIfcButton.Click += (s, e) => ReloadIfcClassList();
+            
+            var ifcClassLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { _ifcDropdown, _ifcSubclassDropdown } };
             var ifcButtonsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { assignIfcButton, removeIfcButton, refreshIfcButton } };
-            layout.AddRow(new Label { Text = "Select IfcClass:" }, _ifcDropdown, ifcButtonsLayout);
+            layout.AddRow(new Label { Text = "IfcClass:", ToolTip = "STR_IFC_CLASS" }, ifcClassLayout, ifcButtonsLayout);
+            
+            _ifcDropdown.SelectedValueChanged += OnPrimaryIfcClassChanged;
 
             // --- Material Part ---
-            // MODIFIED: This block of code was missing and has been restored.
             _materialDropdown.Items.Clear();
             _materialDropdown.Items.Add(new ListItem { Text = "" });
-            foreach (var materialName in _materialLcaData.Keys)
+            foreach (var materialName in _materialLcaData.Keys.OrderBy(k => k))
             {
                 _materialDropdown.Items.Add(new ListItem { Text = materialName });
             }
 
-            var assignMaterialButton = new Button { Image = BytesToEtoBitmap(Resources.btn_assignMaterial256, new Size(16, 16)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
+            var assignMaterialButton = new Button { Image = BytesToEtoBitmap(Resources.btn_assignMaterial256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
             assignMaterialButton.Click += (s, e) => AssignUserString(MaterialKey, "Material", _materialDropdown.SelectedValue as ListItem);
-            var removeMaterialButton = new Button { Image = BytesToEtoBitmap(Resources.btn_removeMaterial256, new Size(16, 16)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
+            var removeMaterialButton = new Button { Image = BytesToEtoBitmap(Resources.btn_removeMaterial256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
             removeMaterialButton.Click += (s, e) => RemoveUserString(MaterialKey, "Material");
             var materialButtonsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { assignMaterialButton, removeMaterialButton } };
-            layout.AddRow(new Label { Text = "Select Material:" }, _materialDropdown, materialButtonsLayout);
+            layout.AddRow(new Label { Text = "Material:", ToolTip = "STR_MATERIAL" }, _materialDropdown, materialButtonsLayout);
 
             return layout;
         }
@@ -249,15 +240,15 @@ namespace MyProject
             if (_userTextGridView.Columns.Count == 0)
             {
                 _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.SerialNumber)), HeaderText = "SN", Editable = false, Width = 30 });
-                _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.IfcClass)), HeaderText = "IfcClass", Editable = false, Width = 65 });
+                _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.IfcClass)), HeaderText = "IfcClass", Editable = false, Width = 150 });
                 _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.Value)), HeaderText = "Material (Name)", Editable = false, Width = 150 });
                 _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.DisplayReference)) { TextAlignment = TextAlignment.Right }, HeaderText = "Ref. Qty.", Editable = false, Width = 70 });
-                _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Eto.Forms.Binding.Property<UserTextEntry, string>(entry => $"{entry.ReferenceLca:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "Ref. LCA", Editable = false, Width = 70 });
+                _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Binding.Property<UserTextEntry, string>(entry => $"{entry.ReferenceLca:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "Ref. LCA", Editable = false, Width = 70 });
                 _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.Count)) { TextAlignment = TextAlignment.Right }, HeaderText = "Count", Editable = false, Width = 50, Visible = false });
                 _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.DisplayQuantity)) { TextAlignment = TextAlignment.Right }, HeaderText = "Qty. (Rh)", Editable = false, Width = 75 });
                 _userTextGridView.Columns.Add(_qtyMultiplierColumn);
-                _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Eto.Forms.Binding.Property<UserTextEntry, string>(entry => $"{entry.QuantityTotal:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "Qty. Total", Editable = false, Width = 75 });
-                _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Eto.Forms.Binding.Property<UserTextEntry, string>(entry => $"{entry.Lca:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "LCA (kgCO2 eq)", Editable = false, Width = 100 });
+                _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Binding.Property<UserTextEntry, string>(entry => $"{entry.QuantityTotal:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "Qty. Total", Editable = false, Width = 75 });
+                _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell { Binding = Binding.Property<UserTextEntry, string>(entry => $"{entry.Lca:0.00}"), TextAlignment = TextAlignment.Right }, HeaderText = "LCA (kgCO2 eq)", Editable = false, Width = 100 });
             }
 
             _qtyMultiplierColumn.Visible = !_aggregateCheckBox.Checked ?? true;
@@ -277,18 +268,14 @@ namespace MyProject
             var selectUnassignedButton = new Button { Text = "Select Unassigned" };
             selectUnassignedButton.Click += OnSelectUnassignedClick;
 
-            var gridHeaderLayout = new DynamicLayout { Spacing = new Size(6, 6) };
-            gridHeaderLayout.AddRow(null, selectUnassignedButton, columnsViewButton);
-
             var viewOptionsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 10, Items = { _showAllObjectsCheckBox, _showUnassignedCheckBox } };
-            var groupingOptionsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 10, Items = { _groupByClassCheckBox, _groupByMaterialCheckBox, _aggregateCheckBox } };
+            var groupingOptionsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 10, Items = { _groupByClassCheckBox, _groupByMaterialCheckBox, _aggregateCheckBox, null, selectUnassignedButton, columnsViewButton } };
 
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
-            layout.AddRow(gridHeaderLayout);
             layout.AddRow(viewOptionsLayout);
             layout.AddRow(groupingOptionsLayout);
-            layout.AddRow(new Scrollable { Content = _userTextGridView, Height = 250 });
-            layout.AddRow(_totalLcaLabel, null);
+            layout.AddRow(new Scrollable { Content = _userTextGridView, Height = 220 });
+            layout.AddRow(_totalLcaLabel);
             return layout;
         }
 
@@ -329,6 +316,32 @@ namespace MyProject
             RhinoDoc.EndOpenDocument += OnDocumentChanged;
             RhinoDoc.NewDocument += OnDocumentChanged;
             RhinoApp.Idle += OnRhinoIdle;
+        }
+        
+        private void OnAssignIfcClassClick(object sender, EventArgs e)
+        {
+            string primaryClass = (_ifcDropdown.SelectedValue as ListItem)?.Text;
+            string secondaryClass = (_ifcSubclassDropdown.SelectedValue as ListItem)?.Text;
+
+            if (string.IsNullOrWhiteSpace(primaryClass))
+            {
+                RhinoApp.WriteLine("Please select a primary IFC class from the dropdown first.");
+                return;
+            }
+
+            // Combine primary and secondary classes into one string
+            string combinedClass = primaryClass;
+            if (!string.IsNullOrWhiteSpace(secondaryClass))
+            {
+                combinedClass += $", {secondaryClass}";
+            }
+
+            AssignUserString(IfcClassKey, "IfcClass", combinedClass);
+        }
+
+        private void OnPrimaryIfcClassChanged(object sender, EventArgs e)
+        {
+            UpdateSubclassDropdown();
         }
 
         private void OnRhinoIdle(object sender, EventArgs e)
@@ -444,6 +457,7 @@ namespace MyProject
                 RhinoDoc.EndOpenDocument -= OnDocumentChanged;
                 RhinoDoc.NewDocument -= OnDocumentChanged;
                 RhinoApp.Idle -= OnRhinoIdle;
+                _ifcDropdown.SelectedValueChanged -= OnPrimaryIfcClassChanged;
             }
             base.Dispose(disposing);
         }
@@ -554,7 +568,7 @@ namespace MyProject
             }
 
             _userTextGridView.DataStore = gridData;
-            _totalLcaLabel.Text = $"Total LCA: {gridData.Sum(entry => entry.Lca):0.00} kgCO2 eq";
+            _totalLcaLabel.Text = $"Total LCA: {gridData.Sum(entry => entry.Lca).ToString("N2", CultureInfo.InvariantCulture)} kgCO2 eq";
 
             SyncGridSelectionWithRhino();
         }
@@ -564,23 +578,58 @@ namespace MyProject
             var doc = RhinoDoc.ActiveDoc;
             if (doc == null) return;
             var newIfcClasses = CsvReader.ReadIfcClassesDynamic(doc);
-            if (!newIfcClasses.SequenceEqual(_ifcClasses))
+
+            // Simple check for changes. A more robust comparison might be needed for complex dictionaries.
+            if (newIfcClasses.Count != _ifcClasses.Count || !newIfcClasses.Keys.All(_ifcClasses.ContainsKey))
             {
                 _ifcClasses = newIfcClasses;
-                PopulateIfcDropdown();
+                PopulatePrimaryIfcDropdown();
             }
         }
 
-        private void PopulateIfcDropdown()
+        private void PopulatePrimaryIfcDropdown()
         {
             var selectedText = _ifcDropdown.SelectedValue is ListItem selectedItem ? selectedItem.Text : null;
+            
             _ifcDropdown.Items.Clear();
-            _ifcDropdown.Items.Add(new ListItem { Text = "" });
-            foreach (var cls in _ifcClasses) _ifcDropdown.Items.Add(new ListItem { Text = cls });
+            _ifcDropdown.Items.Add(new ListItem { Text = "" }); // Add a blank option
+            foreach (var primaryClass in _ifcClasses.Keys.OrderBy(k => k))
+            {
+                _ifcDropdown.Items.Add(new ListItem { Text = primaryClass });
+            }
+
             if (selectedText != null)
             {
                 var itemToRestore = _ifcDropdown.Items.FirstOrDefault(i => i.Text == selectedText);
                 if (itemToRestore != null) _ifcDropdown.SelectedValue = itemToRestore;
+            }
+            else
+            {
+                _ifcDropdown.SelectedIndex = 0; // Default to blank
+            }
+
+            // Initial population of the subclass dropdown
+            UpdateSubclassDropdown();
+        }
+
+        private void UpdateSubclassDropdown()
+        {
+            _ifcSubclassDropdown.Items.Clear();
+            _ifcSubclassDropdown.Enabled = false;
+
+            if (_ifcDropdown.SelectedValue is ListItem selectedItem && !string.IsNullOrEmpty(selectedItem.Text))
+            {
+                string primaryClass = selectedItem.Text;
+                if (_ifcClasses.TryGetValue(primaryClass, out List<string> subclasses) && subclasses.Any())
+                {
+                    _ifcSubclassDropdown.Items.Add(new ListItem { Text = "" }); // Add a blank option
+                    foreach (var subclass in subclasses)
+                    {
+                        _ifcSubclassDropdown.Items.Add(new ListItem { Text = subclass });
+                    }
+                    _ifcSubclassDropdown.SelectedIndex = 0; // Default to blank
+                    _ifcSubclassDropdown.Enabled = true;
+                }
             }
         }
 
@@ -665,14 +714,20 @@ namespace MyProject
 
         private static void AssignUserString(string key, string friendlyName, ListItem selectedItem)
         {
-            var doc = RhinoDoc.ActiveDoc;
-            if (doc == null) return;
             var value = selectedItem?.Text;
             if (string.IsNullOrWhiteSpace(value))
             {
-                RhinoApp.WriteLine($"Please select a valid {friendlyName} from the dropdown first.");
+                 RhinoApp.WriteLine($"Please select a valid {friendlyName} from the dropdown first.");
                 return;
             }
+            AssignUserString(key, friendlyName, value);
+        }
+
+        private static void AssignUserString(string key, string friendlyName, string value)
+        {
+            var doc = RhinoDoc.ActiveDoc;
+            if (doc == null) return;
+            
             var selectedObjects = doc.Objects.GetSelectedObjects(false, false).ToList();
             if (!selectedObjects.Any())
             {

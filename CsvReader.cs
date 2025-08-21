@@ -60,12 +60,10 @@ namespace MyProject
         }
 
         /// <summary>
-        /// Dynamically reads IFC classes based on the active Rhino document's settings.
-        /// Order of precedence:
-        /// 1. URL from Document User Text key "STR_IFC_CLASS_CSV_URL" (Web or Local).
-        /// 2. Embedded resource file as a fallback.
+        /// Dynamically reads hierarchical IFC classes based on the active Rhino document's settings.
+        /// The CSV is expected to have two columns: PrimaryClass,SecondaryClass.
         /// </summary>
-        public static List<string> ReadIfcClassesDynamic(RhinoDoc doc)
+        public static Dictionary<string, List<string>> ReadIfcClassesDynamic(RhinoDoc doc)
         {
             if (doc != null)
             {
@@ -75,16 +73,15 @@ namespace MyProject
                     RhinoApp.WriteLine($"Attempting to load IFC classes from custom URL: {url}");
                     try
                     {
-                        // Await the async method and get the result.
                         string csvContent = Task.Run(async () => await GetContentFromUrlOrFile(url)).GetAwaiter().GetResult();
 
                         if (!string.IsNullOrEmpty(csvContent))
                         {
-                            var list = ParseIfcCsvContent(csvContent);
-                            if (list.Any())
+                            var dict = ParseIfcCsvContent(csvContent);
+                            if (dict.Any())
                             {
-                                RhinoApp.WriteLine($"Successfully loaded {list.Count} IFC classes from custom URL.");
-                                return list;
+                                RhinoApp.WriteLine($"Successfully loaded {dict.Count} primary IFC classes from custom URL.");
+                                return dict;
                             }
                         }
                     }
@@ -97,7 +94,9 @@ namespace MyProject
 
             // Fallback to embedded resource
             RhinoApp.WriteLine("Loading IFC classes from default embedded resource.");
-            return ReadIfcClassesFromResource("MyProject.Resources.Data.ifcClassList.csv");
+            // Assuming the fallback resource is also in the new format.
+            // You might need to update the resource file in your project.
+            return ReadIfcClassesFromResource("MyProject.Resources.Data.ifcClassListWithSubClass.csv");
         }
 
         /// <summary>
@@ -105,7 +104,6 @@ namespace MyProject
         /// </summary>
         private static async Task<string> GetContentFromUrlOrFile(string url)
         {
-            // Try as a web URL first
             if (Uri.TryCreate(url, UriKind.Absolute, out Uri webUri) && (webUri.Scheme == Uri.UriSchemeHttp || webUri.Scheme == Uri.UriSchemeHttps))
             {
                 try
@@ -121,7 +119,6 @@ namespace MyProject
                 }
             }
 
-            // If it's not a web URL or if web failed, try as a local file
             if (File.Exists(url))
             {
                 return File.ReadAllText(url);
@@ -131,11 +128,11 @@ namespace MyProject
         }
 
         /// <summary>
-        /// Parses a string of CSV content into a list of IFC classes.
+        /// Parses a string of CSV content into a dictionary of IFC classes and subclasses.
         /// </summary>
-        private static List<string> ParseIfcCsvContent(string csvContent)
+        private static Dictionary<string, List<string>> ParseIfcCsvContent(string csvContent)
         {
-            var ifcClasses = new List<string>();
+            var ifcClasses = new Dictionary<string, List<string>>();
             using (var reader = new StringReader(csvContent))
             {
                 reader.ReadLine(); // Skip header
@@ -143,19 +140,34 @@ namespace MyProject
                 while ((line = reader.ReadLine()) != null)
                 {
                     var parts = line.Split(',');
-                    if (parts.Length > 0 && !string.IsNullOrWhiteSpace(parts[0]))
+                    if (parts.Length < 1 || string.IsNullOrWhiteSpace(parts[0])) continue;
+
+                    string primaryClass = parts[0].Trim();
+                    string secondaryClass = parts.Length > 1 ? parts[1].Trim() : string.Empty;
+
+                    if (!ifcClasses.ContainsKey(primaryClass))
                     {
-                        ifcClasses.Add(parts[0].Trim());
+                        ifcClasses[primaryClass] = new List<string>();
+                    }
+
+                    if (!string.IsNullOrEmpty(secondaryClass) && !ifcClasses[primaryClass].Contains(secondaryClass))
+                    {
+                        ifcClasses[primaryClass].Add(secondaryClass);
                     }
                 }
+            }
+            // Ensure subclasses are sorted for consistent UI
+            foreach (var key in ifcClasses.Keys)
+            {
+                ifcClasses[key].Sort();
             }
             return ifcClasses;
         }
 
         /// <summary>
-        /// Reads IFC classes from an embedded CSV resource file. (Fallback method)
+        /// Reads IFC classes and subclasses from an embedded CSV resource file. (Fallback method)
         /// </summary>
-        public static List<string> ReadIfcClassesFromResource(string resourceName)
+        public static Dictionary<string, List<string>> ReadIfcClassesFromResource(string resourceName)
         {
             var assembly = Assembly.GetExecutingAssembly();
             using (var stream = assembly.GetManifestResourceStream(resourceName))
@@ -163,7 +175,7 @@ namespace MyProject
                 if (stream == null)
                 {
                     RhinoApp.WriteLine($"Error: Embedded resource '{resourceName}' not found.");
-                    return new List<string>();
+                    return new Dictionary<string, List<string>>();
                 }
                 using (var reader = new StreamReader(stream))
                 {

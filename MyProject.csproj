@@ -34,6 +34,7 @@
     <None Remove="Resources\Buttons\assignMaterial256.ico" />
     <None Remove="Resources\columnsView.ico" />
     <None Remove="Resources\Data\ifcClassList.csv" />
+    <None Remove="Resources\Data\ifcClassListWithSubClass.csv" />
     <None Remove="Resources\Data\materialListWithUnits.csv" />
     <None Remove="Resources\materialListWithUnits.csv" />
     <None Remove="Resources\removeIfcClass256.ico" />
@@ -71,6 +72,9 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </EmbeddedResource>
     <EmbeddedResource Include="Resources\Buttons\removeMaterial256.ico">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\Data\ifcClassListWithSubClass.csv">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </EmbeddedResource>
     <EmbeddedResource Include="Resources\Data\materialListWithUnits.csv">

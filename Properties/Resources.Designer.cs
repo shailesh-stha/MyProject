@@ -143,6 +143,16 @@ namespace MyProject.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
+        internal static byte[] ifcClassListWithSubClass {
+            get {
+                object obj = ResourceManager.GetObject("ifcClassListWithSubClass", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
         internal static byte[] materialListWithUnits {
             get {
                 object obj = ResourceManager.GetObject("materialListWithUnits", resourceCulture);
