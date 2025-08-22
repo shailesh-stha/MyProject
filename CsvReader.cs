@@ -2,6 +2,7 @@
 using Rhino;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -16,43 +17,89 @@ namespace MyProject
     public static class CsvReader
     {
         /// <summary>
-        /// Reads material LCA data from an embedded CSV resource file.
+        /// Reads material LCA data from an embedded CSV resource file. Returns a list to preserve order.
         /// </summary>
-        public static Dictionary<string, MaterialData> ReadMaterialLcaDataFromResource(string resourceName)
+        public static List<MaterialData> ReadMaterialLcaDataFromResource(string resourceName)
         {
-            var materials = new Dictionary<string, MaterialData>();
             var assembly = Assembly.GetExecutingAssembly();
-
             using (Stream stream = assembly.GetManifestResourceStream(resourceName))
             {
                 if (stream == null)
                 {
                     RhinoApp.WriteLine($"Error: Embedded resource '{resourceName}' not found.");
-                    return materials;
+                    return new List<MaterialData>();
                 }
 
                 using (var reader = new StreamReader(stream))
                 {
-                    reader.ReadLine(); // Skip header
-                    string line;
-                    while ((line = reader.ReadLine()) != null)
-                    {
-                        var parts = line.Split(',');
-                        if (parts.Length != 4) continue;
+                    return ParseMaterialCsvContent(reader.ReadToEnd());
+                }
+            }
+        }
 
-                        var materialName = parts[0].Trim();
-                        if (double.TryParse(parts[1], out double quantity) &&
-                            double.TryParse(parts[3], out double lcaValue) &&
-                            !string.IsNullOrWhiteSpace(materialName))
+        /// <summary>
+        /// Dynamically reads material LCA data, preserving row order.
+        /// </summary>
+        public static List<MaterialData> ReadMaterialLcaDataDynamic(RhinoDoc doc)
+        {
+            if (doc != null)
+            {
+                var url = doc.Strings.GetValue("STR_MATERIAL_CSV_URL");
+                if (!string.IsNullOrWhiteSpace(url))
+                {
+                    RhinoApp.WriteLine($"Attempting to load Material LCA data from custom URL: {url}");
+                    try
+                    {
+                        string csvContent = Task.Run(async () => await GetContentFromUrlOrFile(url)).GetAwaiter().GetResult();
+
+                        if (!string.IsNullOrEmpty(csvContent))
                         {
-                            materials[materialName] = new MaterialData
+                            var list = ParseMaterialCsvContent(csvContent);
+                            if (list.Any())
                             {
-                                MaterialName = materialName,
-                                ReferenceQuantity = quantity,
-                                ReferenceUnit = parts[2].Trim(),
-                                Lca = lcaValue
-                            };
+                                RhinoApp.WriteLine($"Successfully loaded {list.Count} materials from custom URL.");
+                                return list;
+                            }
                         }
+                    }
+                    catch (Exception ex)
+                    {
+                        RhinoApp.WriteLine($"Error loading from custom URL '{url}'. Details: {ex.Message}");
+                    }
+                }
+            }
+
+            RhinoApp.WriteLine("Loading Material LCA data from default embedded resource.");
+            return ReadMaterialLcaDataFromResource("MyProject.Resources.Data.materialListWithUnits.csv");
+        }
+
+        /// <summary>
+        /// Parses a string of CSV content into a list of MaterialData to preserve order.
+        /// </summary>
+        private static List<MaterialData> ParseMaterialCsvContent(string csvContent)
+        {
+            var materials = new List<MaterialData>();
+            using (var reader = new StringReader(csvContent))
+            {
+                reader.ReadLine(); // Skip header
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    var parts = line.Split(',');
+                    if (parts.Length != 4) continue;
+
+                    var materialName = parts[0].Trim();
+                    if (double.TryParse(parts[1], NumberStyles.Any, CultureInfo.InvariantCulture, out double quantity) &&
+                        double.TryParse(parts[3], NumberStyles.Any, CultureInfo.InvariantCulture, out double lcaValue) &&
+                        !string.IsNullOrWhiteSpace(materialName))
+                    {
+                        materials.Add(new MaterialData
+                        {
+                            MaterialName = materialName,
+                            ReferenceQuantity = quantity,
+                            ReferenceUnit = parts[2].Trim(),
+                            Lca = lcaValue
+                        });
                     }
                 }
             }
@@ -60,8 +107,7 @@ namespace MyProject
         }
 
         /// <summary>
-        /// Dynamically reads hierarchical IFC classes based on the active Rhino document's settings.
-        /// The CSV is expected to have two columns: PrimaryClass,SecondaryClass.
+        /// Dynamically reads hierarchical IFC classes, preserving row order.
         /// </summary>
         public static Dictionary<string, List<string>> ReadIfcClassesDynamic(RhinoDoc doc)
         {
@@ -92,16 +138,10 @@ namespace MyProject
                 }
             }
 
-            // Fallback to embedded resource
             RhinoApp.WriteLine("Loading IFC classes from default embedded resource.");
-            // Assuming the fallback resource is also in the new format.
-            // You might need to update the resource file in your project.
             return ReadIfcClassesFromResource("MyProject.Resources.Data.ifcClassListWithSubClass.csv");
         }
 
-        /// <summary>
-        /// Helper to get CSV content from a web URL or a local file path.
-        /// </summary>
         private static async Task<string> GetContentFromUrlOrFile(string url)
         {
             if (Uri.TryCreate(url, UriKind.Absolute, out Uri webUri) && (webUri.Scheme == Uri.UriSchemeHttp || webUri.Scheme == Uri.UriSchemeHttps))
@@ -128,10 +168,11 @@ namespace MyProject
         }
 
         /// <summary>
-        /// Parses a string of CSV content into a dictionary of IFC classes and subclasses.
+        /// Parses CSV content into a dictionary. Using LinkedDictionary to preserve insertion order for primary classes.
         /// </summary>
         private static Dictionary<string, List<string>> ParseIfcCsvContent(string csvContent)
         {
+            // Using a regular Dictionary as it preserves insertion order in modern .NET runtimes used by Rhino.
             var ifcClasses = new Dictionary<string, List<string>>();
             using (var reader = new StringReader(csvContent))
             {
@@ -156,16 +197,11 @@ namespace MyProject
                     }
                 }
             }
-            // Ensure subclasses are sorted for consistent UI
-            foreach (var key in ifcClasses.Keys)
-            {
-                ifcClasses[key].Sort();
-            }
             return ifcClasses;
         }
 
         /// <summary>
-        /// Reads IFC classes and subclasses from an embedded CSV resource file. (Fallback method)
+        /// Reads IFC classes and subclasses from an embedded resource, preserving order.
         /// </summary>
         public static Dictionary<string, List<string>> ReadIfcClassesFromResource(string resourceName)
         {

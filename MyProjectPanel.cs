@@ -1,4 +1,5 @@
 ﻿// MyProjectPanel.cs
+
 using Eto.Drawing;
 using Eto.Forms;
 using MyProject.Properties;
@@ -31,7 +32,8 @@ namespace MyProject
 
         #region Private Fields
         private Dictionary<string, List<string>> _ifcClasses = new Dictionary<string, List<string>>();
-        private readonly Dictionary<string, MaterialData> _materialLcaData;
+        // Using a dictionary for both order preservation (in modern .NET) and fast lookups.
+        private Dictionary<string, MaterialData> _materialLcaData;
         private readonly Dictionary<Guid, double> _quantityMultipliers = new Dictionary<Guid, double>();
 
         // UI Controls
@@ -164,8 +166,6 @@ namespace MyProject
 
                     var backgroundCorners = new Point3d[] { corner1, corner2, corner3, corner4 };
 
-                    //e.Display.DrawPolygon(backgroundCorners, backgroundColor, true);
-
                     var textPlane = new Plane(textLocation, screenXAxis, camUp);
                     e.Display.Draw3dText(text, textColor, textPlane, worldHeight, fontFace);
                 }
@@ -178,9 +178,6 @@ namespace MyProject
 
         public MyProjectPanel()
         {
-            _materialLcaData = CsvReader.ReadMaterialLcaDataFromResource("MyProject.Resources.Data.materialListWithUnits.csv");
-
-            // --- NEW: Instantiate both conduits ---
             _ifcClassDisplayConduit = new AttributeDisplayConduit();
             _materialDisplayConduit = new AttributeDisplayConduit();
 
@@ -188,6 +185,7 @@ namespace MyProject
             RegisterEventHandlers();
 
             ReloadIfcClassList();
+            ReloadMaterialList();
             UpdatePanelData();
         }
 
@@ -200,8 +198,6 @@ namespace MyProject
             });
 
             var mainLayout = new DynamicLayout { Spacing = new Size(6, 6), Padding = new Padding(10) };
-
-            // ... (Other expanders remain the same) ...
 
             mainLayout.Add(new Expander
             {
@@ -246,7 +242,6 @@ namespace MyProject
 
         #region UI Layout Methods
 
-        // ... (Other layout methods remain the same) ...
         private Control CreateUtilityButtonsLayout()
         {
             var structureIcon = BytesToEtoBitmap(Resources.btn_strLCA256, new Size(18, 18));
@@ -310,12 +305,11 @@ namespace MyProject
         {
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
 
-            // --- IFC Class Part ---
             var assignIfcButton = new Button { Image = BytesToEtoBitmap(Resources.btn_assignIfcClass256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
             assignIfcButton.Click += OnAssignIfcClassClick;
             var removeIfcButton = new Button { Image = BytesToEtoBitmap(Resources.btn_removeIfcClass256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
             removeIfcButton.Click += (s, e) => RemoveUserString(IfcClassKey, "IfcClass");
-            var refreshIfcButton = new Button { Text = "Refresh" };
+            var refreshIfcButton = new Button { Text = "Update Options" };
             refreshIfcButton.Click += (s, e) => ReloadIfcClassList();
 
             var ifcClassLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { _ifcDropdown, _ifcSubclassDropdown } };
@@ -324,19 +318,14 @@ namespace MyProject
 
             _ifcDropdown.SelectedValueChanged += OnPrimaryIfcClassChanged;
 
-            // --- Material Part ---
-            _materialDropdown.Items.Clear();
-            _materialDropdown.Items.Add(new ListItem { Text = "" });
-            foreach (var materialName in _materialLcaData.Keys.OrderBy(k => k))
-            {
-                _materialDropdown.Items.Add(new ListItem { Text = materialName });
-            }
-
             var assignMaterialButton = new Button { Image = BytesToEtoBitmap(Resources.btn_assignMaterial256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
             assignMaterialButton.Click += (s, e) => AssignUserString(MaterialKey, "Material", _materialDropdown.SelectedValue as ListItem);
             var removeMaterialButton = new Button { Image = BytesToEtoBitmap(Resources.btn_removeMaterial256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
             removeMaterialButton.Click += (s, e) => RemoveUserString(MaterialKey, "Material");
-            var materialButtonsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { assignMaterialButton, removeMaterialButton } };
+            var refreshMaterialButton = new Button { Text = "Update Options" };
+            refreshMaterialButton.Click += (s, e) => ReloadMaterialList();
+
+            var materialButtonsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { assignMaterialButton, removeMaterialButton, refreshMaterialButton } };
             layout.AddRow(new Label { Text = "Material:", ToolTip = "STR_MATERIAL" }, _materialDropdown, materialButtonsLayout);
 
             return layout;
@@ -386,7 +375,6 @@ namespace MyProject
             return layout;
         }
 
-        // --- MODIFIED: Layout now includes both checkboxes ---
         private Control CreateDisplayOptionsLayout()
         {
             _displayIfcClassCheckBox = new CheckBox { Text = "Display IFC Class", Checked = false };
@@ -422,11 +410,9 @@ namespace MyProject
                 return null;
             }
         }
-
         #endregion
 
         #region Event Handlers
-        // ... (Other event handlers are the same) ...
         private void RegisterEventHandlers()
         {
             RhinoDoc.SelectObjects += OnDocumentStateChanged;
@@ -452,7 +438,6 @@ namespace MyProject
                 return;
             }
 
-            // Combine primary and secondary classes into one string
             string combinedClass = primaryClass;
             if (!string.IsNullOrWhiteSpace(secondaryClass))
             {
@@ -485,6 +470,7 @@ namespace MyProject
                 _notesTextArea.Text = RhinoDoc.ActiveDoc?.Notes ?? string.Empty;
             }
             ReloadIfcClassList();
+            ReloadMaterialList();
         }
 
         private void OnAggregateChanged(object sender, EventArgs e) => UpdatePanelData();
@@ -508,12 +494,12 @@ namespace MyProject
             if (doc == null) return;
 
             var idsToSelect = doc.Objects
-                .Where(o => o.IsSelectable(true, false, false, true) &&
-                            o.Attributes.Visible &&
-                            doc.Layers[o.Attributes.LayerIndex].IsVisible &&
-                            string.IsNullOrWhiteSpace(o.Attributes.GetUserString(MaterialKey)))
-                .Select(o => o.Id)
-                .ToList();
+              .Where(o => o.IsSelectable(true, false, false, true) &&
+                    o.Attributes.Visible &&
+                    doc.Layers[o.Attributes.LayerIndex].IsVisible &&
+                    string.IsNullOrWhiteSpace(o.Attributes.GetUserString(MaterialKey)))
+              .Select(o => o.Id)
+              .ToList();
 
             doc.Objects.UnselectAll();
             if (idsToSelect.Any())
@@ -561,7 +547,6 @@ namespace MyProject
 
         private void OnDocumentStateChanged(object sender, EventArgs e) => UpdatePanelDataSafe();
 
-        // --- MODIFIED: A single event handler for both checkboxes ---
         private void OnDisplayAttributeTextCheckedChanged(object sender, EventArgs e)
         {
             UpdateAllConduits();
@@ -577,9 +562,6 @@ namespace MyProject
         {
             if (disposing)
             {
-                // ... (other event unsubscribes) ...
-
-                // --- MODIFIED: Clean up both checkboxes and conduits ---
                 if (_displayIfcClassCheckBox != null)
                 {
                     _displayIfcClassCheckBox.CheckedChanged -= OnDisplayAttributeTextCheckedChanged;
@@ -599,7 +581,6 @@ namespace MyProject
             }
             base.Dispose(disposing);
         }
-
         #endregion
 
         #region Core Logic Methods
@@ -607,12 +588,10 @@ namespace MyProject
 
         private void UpdateUserTextGrid()
         {
-            // ... (this method remains mostly the same, but now calls UpdateAllConduits) ...
-
             var doc = RhinoDoc.ActiveDoc;
             UpdateDocumentUserTextGrid(doc);
 
-            if (doc == null)
+            if (doc == null || _materialLcaData == null)
             {
                 _userTextGridView.DataStore = null;
                 _totalLcaLabel.Text = "Total LCA: 0.00";
@@ -620,8 +599,8 @@ namespace MyProject
             }
 
             var objectsToProcess = (_showAllObjectsCheckBox.Checked == true
-                ? doc.Objects.Where(obj => obj.IsSelectable(true, false, false, true) && obj.Attributes.Visible && doc.Layers[obj.Attributes.LayerIndex].IsVisible)
-                : doc.Objects.GetSelectedObjects(false, false)).ToList();
+              ? doc.Objects.Where(obj => obj.IsSelectable(true, false, false, true) && obj.Attributes.Visible && doc.Layers[obj.Attributes.LayerIndex].IsVisible)
+              : doc.Objects.GetSelectedObjects(false, false)).ToList();
 
             if (!objectsToProcess.Any())
             {
@@ -650,29 +629,29 @@ namespace MyProject
             if (_aggregateCheckBox.Checked == true)
             {
                 var aggregatedData = processedObjects
-                    .GroupBy(p => new { p.Material, p.IfcClass, p.QuantityType })
-                    .Select(g =>
-                    {
-                        var totalQuantity = g.Sum(p => p.Quantity);
-                        var totalLca = 0.0;
-                        _materialLcaData.TryGetValue(g.Key.Material, out MaterialData materialData);
-                        if (materialData != null && g.Key.QuantityType != "N/A") totalLca = totalQuantity * materialData.Lca;
+                  .GroupBy(p => new { p.Material, p.IfcClass, p.QuantityType })
+                  .Select(g =>
+                  {
+                      var totalQuantity = g.Sum(p => p.Quantity);
+                      var totalLca = 0.0;
+                      _materialLcaData.TryGetValue(g.Key.Material, out MaterialData materialData);
+                      if (materialData != null && g.Key.QuantityType != "N/A") totalLca = totalQuantity * materialData.Lca;
 
-                        return new UserTextEntry
-                        {
-                            Value = g.Key.Material,
-                            IfcClass = g.Key.IfcClass,
-                            ReferenceQuantity = materialData?.ReferenceQuantity ?? 0,
-                            ReferenceUnit = materialData?.ReferenceUnit ?? "",
-                            ReferenceLca = materialData?.Lca ?? 0,
-                            Count = g.Count(),
-                            Quantity = totalQuantity,
-                            QuantityUnit = g.First().QuantityUnit,
-                            QuantityType = g.Key.QuantityType,
-                            Lca = totalLca,
-                            ObjectIds = g.Select(p => p.RhinoObject.Id).ToList()
-                        };
-                    });
+                      return new UserTextEntry
+                      {
+                          Value = g.Key.Material,
+                          IfcClass = g.Key.IfcClass,
+                          ReferenceQuantity = materialData?.ReferenceQuantity ?? 0,
+                          ReferenceUnit = materialData?.ReferenceUnit ?? "",
+                          ReferenceLca = materialData?.Lca ?? 0,
+                          Count = g.Count(),
+                          Quantity = totalQuantity,
+                          QuantityUnit = g.First().QuantityUnit,
+                          QuantityType = g.Key.QuantityType,
+                          Lca = totalLca,
+                          ObjectIds = g.Select(p => p.RhinoObject.Id).ToList()
+                      };
+                  });
                 gridData = SortAndFormatData(aggregatedData.ToList());
             }
             else
@@ -716,20 +695,17 @@ namespace MyProject
             doc.Views.Redraw();
         }
 
-        // --- MODIFIED: Renamed and refactored to handle both conduits efficiently ---
         private void UpdateAllConduits()
         {
             var doc = RhinoDoc.ActiveDoc;
             if (doc == null) return;
 
-            // Clear data from both conduits at the start.
             _ifcClassDisplayConduit.DataToDraw.Clear();
             _materialDisplayConduit.DataToDraw.Clear();
 
             bool ifcEnabled = _displayIfcClassCheckBox.Checked ?? false;
             bool materialEnabled = _displayMaterialCheckBox.Checked ?? false;
 
-            // If neither is checked, disable conduits and exit.
             if (!ifcEnabled && !materialEnabled)
             {
                 _ifcClassDisplayConduit.Enabled = false;
@@ -739,10 +715,8 @@ namespace MyProject
 
             var allObjects = doc.Objects.Where(obj => obj.IsSelectable(true, false, false, true) && obj.Attributes.Visible && doc.Layers[obj.Attributes.LayerIndex].IsVisible);
 
-            // Iterate through objects just once.
             foreach (var rhinoObject in allObjects)
             {
-                // Populate IFC class conduit if enabled.
                 if (ifcEnabled)
                 {
                     var ifcClass = rhinoObject.Attributes.GetUserString(IfcClassKey);
@@ -756,7 +730,6 @@ namespace MyProject
                     }
                 }
 
-                // Populate Material conduit if enabled.
                 if (materialEnabled)
                 {
                     var material = rhinoObject.Attributes.GetUserString(MaterialKey);
@@ -771,23 +744,56 @@ namespace MyProject
                 }
             }
 
-            // Set the final enabled state for each conduit.
             _ifcClassDisplayConduit.Enabled = ifcEnabled;
             _materialDisplayConduit.Enabled = materialEnabled;
         }
 
-        // ... (All other methods remain the same) ...
         private void ReloadIfcClassList()
         {
             var doc = RhinoDoc.ActiveDoc;
             if (doc == null) return;
-            var newIfcClasses = CsvReader.ReadIfcClassesDynamic(doc);
 
-            // Simple check for changes. A more robust comparison might be needed for complex dictionaries.
-            if (newIfcClasses.Count != _ifcClasses.Count || !newIfcClasses.Keys.All(_ifcClasses.ContainsKey))
+            _ifcClasses = CsvReader.ReadIfcClassesDynamic(doc);
+            PopulatePrimaryIfcDropdown();
+        }
+
+        private void ReloadMaterialList()
+        {
+            var doc = RhinoDoc.ActiveDoc;
+            // Convert list to a dictionary for fast lookups, handling potential duplicate names.
+            var materialList = CsvReader.ReadMaterialLcaDataDynamic(doc);
+            _materialLcaData = materialList
+                .GroupBy(m => m.MaterialName)
+                .ToDictionary(g => g.Key, g => g.First());
+
+            PopulateMaterialDropdown();
+            UpdatePanelData();
+        }
+
+        private void PopulateMaterialDropdown()
+        {
+            var selectedText = _materialDropdown.SelectedValue is ListItem selectedItem ? selectedItem.Text : null;
+
+            _materialDropdown.Items.Clear();
+            _materialDropdown.Items.Add(new ListItem { Text = "" });
+            if (_materialLcaData != null)
             {
-                _ifcClasses = newIfcClasses;
-                PopulatePrimaryIfcDropdown();
+                // Iterate through dictionary keys, which now maintain insertion order. No .OrderBy() is needed.
+                foreach (var materialName in _materialLcaData.Keys)
+                {
+                    _materialDropdown.Items.Add(new ListItem { Text = materialName });
+                }
+            }
+
+            if (selectedText != null)
+            {
+                var itemToRestore = _materialDropdown.Items.FirstOrDefault(i => i.Text == selectedText);
+                if (itemToRestore != null) _materialDropdown.SelectedValue = itemToRestore;
+                else _materialDropdown.SelectedIndex = 0;
+            }
+            else
+            {
+                _materialDropdown.SelectedIndex = 0;
             }
         }
 
@@ -796,8 +802,9 @@ namespace MyProject
             var selectedText = _ifcDropdown.SelectedValue is ListItem selectedItem ? selectedItem.Text : null;
 
             _ifcDropdown.Items.Clear();
-            _ifcDropdown.Items.Add(new ListItem { Text = "" }); // Add a blank option
-            foreach (var primaryClass in _ifcClasses.Keys.OrderBy(k => k))
+            _ifcDropdown.Items.Add(new ListItem { Text = "" });
+            // Iterate through dictionary keys, which now maintain insertion order. No .OrderBy() is needed.
+            foreach (var primaryClass in _ifcClasses.Keys)
             {
                 _ifcDropdown.Items.Add(new ListItem { Text = primaryClass });
             }
@@ -809,10 +816,9 @@ namespace MyProject
             }
             else
             {
-                _ifcDropdown.SelectedIndex = 0; // Default to blank
+                _ifcDropdown.SelectedIndex = 0;
             }
 
-            // Initial population of the subclass dropdown
             UpdateSubclassDropdown();
         }
 
@@ -826,12 +832,13 @@ namespace MyProject
                 string primaryClass = selectedItem.Text;
                 if (_ifcClasses.TryGetValue(primaryClass, out List<string> subclasses) && subclasses.Any())
                 {
-                    _ifcSubclassDropdown.Items.Add(new ListItem { Text = "" }); // Add a blank option
+                    _ifcSubclassDropdown.Items.Add(new ListItem { Text = "" });
+                    // Subclasses are no longer sorted by the CsvReader.
                     foreach (var subclass in subclasses)
                     {
                         _ifcSubclassDropdown.Items.Add(new ListItem { Text = subclass });
                     }
-                    _ifcSubclassDropdown.SelectedIndex = 0; // Default to blank
+                    _ifcSubclassDropdown.SelectedIndex = 0;
                     _ifcSubclassDropdown.Enabled = true;
                 }
             }
