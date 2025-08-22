@@ -3,15 +3,17 @@ using Eto.Drawing;
 using Eto.Forms;
 using MyProject.Properties;
 using Rhino;
+using Rhino.Display; // Required for DisplayConduit
+using Rhino.DocObjects;
 using Rhino.Geometry;
 using Rhino.UI.Controls;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Globalization;
 
 namespace MyProject
 {
@@ -28,7 +30,6 @@ namespace MyProject
         #endregion
 
         #region Private Fields
-        // Updated to support hierarchical IFC classes
         private Dictionary<string, List<string>> _ifcClasses = new Dictionary<string, List<string>>();
         private readonly Dictionary<string, MaterialData> _materialLcaData;
         private readonly Dictionary<Guid, double> _quantityMultipliers = new Dictionary<Guid, double>();
@@ -38,12 +39,11 @@ namespace MyProject
         private readonly GridView<DocumentUserTextEntry> _docUserTextGridView = new GridView<DocumentUserTextEntry> { ShowHeader = true, Height = 100, Width = 550 };
         private readonly GridColumn _qtyMultiplierColumn = new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.QuantityMultiplier)) { TextAlignment = TextAlignment.Right }, HeaderText = "Qty. Multiplier", Editable = true, Width = 90 };
         private readonly Label _totalLcaLabel = new Label { Text = "Total LCA: 0.00" };
-        
-        // --- Dropdown widths updated from 180 to 90 ---
+
         private readonly ComboBox _ifcDropdown = new ComboBox { Width = 90, AutoComplete = true };
         private readonly ComboBox _ifcSubclassDropdown = new ComboBox { Width = 90, AutoComplete = true };
         private readonly ComboBox _materialDropdown = new ComboBox { Width = 90, AutoComplete = true };
-        
+
         private readonly CheckBox _showAllObjectsCheckBox = new CheckBox { Text = "Show All/Selected", Checked = true };
         private readonly CheckBox _showUnassignedCheckBox = new CheckBox { Text = "Show/Hide Unassigned", Checked = true };
         private readonly CheckBox _groupByMaterialCheckBox = new CheckBox { Text = "Group by Material", Checked = false };
@@ -51,12 +51,18 @@ namespace MyProject
         private readonly CheckBox _aggregateCheckBox = new CheckBox { Text = "Aggregate", Checked = false };
         private TextArea _notesTextArea;
 
+        // --- MODIFIED: Fields for two conduits and two checkboxes ---
+        private CheckBox _displayIfcClassCheckBox;
+        private CheckBox _displayMaterialCheckBox;
+        private readonly AttributeDisplayConduit _ifcClassDisplayConduit;
+        private readonly AttributeDisplayConduit _materialDisplayConduit;
+
         private bool _isSyncingSelection = false;
         private bool _needsRefresh = false;
         private bool _isMouseOverGrid = false;
         #endregion
 
-        #region Data-Binding Classes
+        #region Data-Binding and Conduit Classes
         private class UserTextEntry
         {
             public string SerialNumber { get; set; }
@@ -82,11 +88,101 @@ namespace MyProject
             public string Key { get; set; }
             public string Value { get; set; }
         }
+
+        // Helper class to pass data to the conduit. Using the object's ID is more robust.
+        private class ConduitDrawData
+        {
+            public Guid ObjectId { get; set; }
+            public string Text { get; set; }
+        }
+
+        // --- RENAMED: Conduit is now generic for any attribute ---
+        private class AttributeDisplayConduit : DisplayConduit
+        {
+            public List<ConduitDrawData> DataToDraw { get; set; } = new List<ConduitDrawData>();
+
+            protected override void PostDrawObjects(DrawEventArgs e)
+            {
+                if (!e.Display.Viewport.IsPerspectiveProjection)
+                {
+                    return;
+                }
+
+                e.Display.PushDepthTesting(false);
+                e.Display.PushDepthWriting(false);
+
+                var textColor = System.Drawing.Color.Black;
+                var backgroundColor = System.Drawing.Color.White;
+                const string fontFace = "Arial";
+                const int textPixelHeight = 10;
+
+                foreach (var data in DataToDraw)
+                {
+                    var rhinoObject = e.RhinoDoc.Objects.FindId(data.ObjectId);
+                    if (rhinoObject == null) continue;
+
+                    var bbox = rhinoObject.Geometry.GetBoundingBox(true);
+                    if (!bbox.IsValid) continue;
+
+                    var location = bbox.Center;
+                    var text = data.Text;
+
+                    var camDir = e.Display.Viewport.CameraDirection;
+                    var camUp = e.Display.Viewport.CameraUp;
+                    var screenXAxis = Vector3d.CrossProduct(camDir, camUp);
+
+                    var worldToScreen = e.Display.Viewport.GetTransform(CoordinateSystem.World, CoordinateSystem.Screen);
+                    var locationOnScreen = location;
+                    locationOnScreen.Transform(worldToScreen);
+                    var pointAboveOnScreen = new Point3d(locationOnScreen.X, locationOnScreen.Y - textPixelHeight, locationOnScreen.Z);
+
+                    var screenToWorld = e.Display.Viewport.GetTransform(CoordinateSystem.Screen, CoordinateSystem.World);
+                    pointAboveOnScreen.Transform(screenToWorld);
+                    var worldHeight = location.DistanceTo(pointAboveOnScreen);
+
+                    var leaderDirection = screenXAxis + camUp;
+                    leaderDirection.Unitize();
+
+                    var leaderLength = worldHeight * 5.0;
+                    var textLocation = location + (leaderDirection * leaderLength);
+
+                    e.Display.DrawArrow(new Line(textLocation, location), textColor);
+
+                    var tempTextEntity = new Text3d(text, Plane.WorldXY, worldHeight) { FontFace = fontFace };
+                    var tempBbox = tempTextEntity.BoundingBox;
+                    var worldWidth = tempBbox.Max.X - tempBbox.Min.X;
+
+                    var padding = worldHeight * 0.2;
+                    var backgroundWidth = worldWidth + (2 * padding);
+                    var backgroundHeight = worldHeight + (2 * padding);
+                    var backgroundOrigin = textLocation - (screenXAxis * padding) - (camUp * padding);
+
+                    var corner1 = backgroundOrigin;
+                    var corner2 = backgroundOrigin + (screenXAxis * backgroundWidth);
+                    var corner3 = backgroundOrigin + (screenXAxis * backgroundWidth) + (camUp * backgroundHeight);
+                    var corner4 = backgroundOrigin + (camUp * backgroundHeight);
+
+                    var backgroundCorners = new Point3d[] { corner1, corner2, corner3, corner4 };
+
+                    //e.Display.DrawPolygon(backgroundCorners, backgroundColor, true);
+
+                    var textPlane = new Plane(textLocation, screenXAxis, camUp);
+                    e.Display.Draw3dText(text, textColor, textPlane, worldHeight, fontFace);
+                }
+
+                e.Display.PopDepthTesting();
+                e.Display.PopDepthWriting();
+            }
+        }
         #endregion
 
         public MyProjectPanel()
         {
             _materialLcaData = CsvReader.ReadMaterialLcaDataFromResource("MyProject.Resources.Data.materialListWithUnits.csv");
+
+            // --- NEW: Instantiate both conduits ---
+            _ifcClassDisplayConduit = new AttributeDisplayConduit();
+            _materialDisplayConduit = new AttributeDisplayConduit();
 
             InitializeLayout();
             RegisterEventHandlers();
@@ -104,6 +200,8 @@ namespace MyProject
             });
 
             var mainLayout = new DynamicLayout { Spacing = new Size(6, 6), Padding = new Padding(10) };
+
+            // ... (Other expanders remain the same) ...
 
             mainLayout.Add(new Expander
             {
@@ -128,6 +226,13 @@ namespace MyProject
 
             mainLayout.Add(new Expander
             {
+                Header = new Label { Text = "Viewport Display", Style = "bold_label" },
+                Content = CreateDisplayOptionsLayout(),
+                Expanded = true
+            });
+
+            mainLayout.Add(new Expander
+            {
                 Header = new Label { Text = "Document Notes/User Text", Style = "bold_label" },
                 Content = CreateCombinedNotesAndUserTextLayout(),
                 Expanded = false
@@ -140,6 +245,8 @@ namespace MyProject
         }
 
         #region UI Layout Methods
+
+        // ... (Other layout methods remain the same) ...
         private Control CreateUtilityButtonsLayout()
         {
             var structureIcon = BytesToEtoBitmap(Resources.btn_strLCA256, new Size(18, 18));
@@ -210,11 +317,11 @@ namespace MyProject
             removeIfcButton.Click += (s, e) => RemoveUserString(IfcClassKey, "IfcClass");
             var refreshIfcButton = new Button { Text = "Refresh" };
             refreshIfcButton.Click += (s, e) => ReloadIfcClassList();
-            
+
             var ifcClassLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { _ifcDropdown, _ifcSubclassDropdown } };
             var ifcButtonsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { assignIfcButton, removeIfcButton, refreshIfcButton } };
             layout.AddRow(new Label { Text = "IfcClass:", ToolTip = "STR_IFC_CLASS" }, ifcClassLayout, ifcButtonsLayout);
-            
+
             _ifcDropdown.SelectedValueChanged += OnPrimaryIfcClassChanged;
 
             // --- Material Part ---
@@ -279,6 +386,21 @@ namespace MyProject
             return layout;
         }
 
+        // --- MODIFIED: Layout now includes both checkboxes ---
+        private Control CreateDisplayOptionsLayout()
+        {
+            _displayIfcClassCheckBox = new CheckBox { Text = "Display IFC Class", Checked = false };
+            _displayIfcClassCheckBox.CheckedChanged += OnDisplayAttributeTextCheckedChanged;
+
+            _displayMaterialCheckBox = new CheckBox { Text = "Display Material", Checked = false };
+            _displayMaterialCheckBox.CheckedChanged += OnDisplayAttributeTextCheckedChanged;
+
+            var layout = new DynamicLayout { Spacing = new Size(6, 6) };
+            layout.AddRow(_displayIfcClassCheckBox);
+            layout.AddRow(_displayMaterialCheckBox);
+            return layout;
+        }
+
         private static Bitmap BytesToEtoBitmap(byte[] bytes, Size? desiredSize = null)
         {
             try
@@ -304,6 +426,7 @@ namespace MyProject
         #endregion
 
         #region Event Handlers
+        // ... (Other event handlers are the same) ...
         private void RegisterEventHandlers()
         {
             RhinoDoc.SelectObjects += OnDocumentStateChanged;
@@ -317,7 +440,7 @@ namespace MyProject
             RhinoDoc.NewDocument += OnDocumentChanged;
             RhinoApp.Idle += OnRhinoIdle;
         }
-        
+
         private void OnAssignIfcClassClick(object sender, EventArgs e)
         {
             string primaryClass = (_ifcDropdown.SelectedValue as ListItem)?.Text;
@@ -438,6 +561,13 @@ namespace MyProject
 
         private void OnDocumentStateChanged(object sender, EventArgs e) => UpdatePanelDataSafe();
 
+        // --- MODIFIED: A single event handler for both checkboxes ---
+        private void OnDisplayAttributeTextCheckedChanged(object sender, EventArgs e)
+        {
+            UpdateAllConduits();
+            RhinoDoc.ActiveDoc?.Views.Redraw();
+        }
+
         private void UpdatePanelDataSafe()
         {
             if (!_isSyncingSelection) UpdatePanelData();
@@ -447,17 +577,25 @@ namespace MyProject
         {
             if (disposing)
             {
-                RhinoDoc.SelectObjects -= OnDocumentStateChanged;
-                RhinoDoc.DeselectObjects -= OnDocumentStateChanged;
-                RhinoDoc.DeselectAllObjects -= OnDocumentStateChanged;
-                RhinoDoc.AddRhinoObject -= OnDocumentStateChanged;
-                RhinoDoc.DeleteRhinoObject -= OnDocumentStateChanged;
-                RhinoDoc.ReplaceRhinoObject -= OnDocumentStateChanged;
-                RhinoDoc.UserStringChanged -= OnDocumentStateChanged;
-                RhinoDoc.EndOpenDocument -= OnDocumentChanged;
-                RhinoDoc.NewDocument -= OnDocumentChanged;
-                RhinoApp.Idle -= OnRhinoIdle;
-                _ifcDropdown.SelectedValueChanged -= OnPrimaryIfcClassChanged;
+                // ... (other event unsubscribes) ...
+
+                // --- MODIFIED: Clean up both checkboxes and conduits ---
+                if (_displayIfcClassCheckBox != null)
+                {
+                    _displayIfcClassCheckBox.CheckedChanged -= OnDisplayAttributeTextCheckedChanged;
+                }
+                if (_displayMaterialCheckBox != null)
+                {
+                    _displayMaterialCheckBox.CheckedChanged -= OnDisplayAttributeTextCheckedChanged;
+                }
+                if (_ifcClassDisplayConduit != null)
+                {
+                    _ifcClassDisplayConduit.Enabled = false;
+                }
+                if (_materialDisplayConduit != null)
+                {
+                    _materialDisplayConduit.Enabled = false;
+                }
             }
             base.Dispose(disposing);
         }
@@ -469,6 +607,8 @@ namespace MyProject
 
         private void UpdateUserTextGrid()
         {
+            // ... (this method remains mostly the same, but now calls UpdateAllConduits) ...
+
             var doc = RhinoDoc.ActiveDoc;
             UpdateDocumentUserTextGrid(doc);
 
@@ -571,8 +711,72 @@ namespace MyProject
             _totalLcaLabel.Text = $"Total LCA: {gridData.Sum(entry => entry.Lca).ToString("N2", CultureInfo.InvariantCulture)} kgCO2 eq";
 
             SyncGridSelectionWithRhino();
+
+            UpdateAllConduits();
+            doc.Views.Redraw();
         }
 
+        // --- MODIFIED: Renamed and refactored to handle both conduits efficiently ---
+        private void UpdateAllConduits()
+        {
+            var doc = RhinoDoc.ActiveDoc;
+            if (doc == null) return;
+
+            // Clear data from both conduits at the start.
+            _ifcClassDisplayConduit.DataToDraw.Clear();
+            _materialDisplayConduit.DataToDraw.Clear();
+
+            bool ifcEnabled = _displayIfcClassCheckBox.Checked ?? false;
+            bool materialEnabled = _displayMaterialCheckBox.Checked ?? false;
+
+            // If neither is checked, disable conduits and exit.
+            if (!ifcEnabled && !materialEnabled)
+            {
+                _ifcClassDisplayConduit.Enabled = false;
+                _materialDisplayConduit.Enabled = false;
+                return;
+            }
+
+            var allObjects = doc.Objects.Where(obj => obj.IsSelectable(true, false, false, true) && obj.Attributes.Visible && doc.Layers[obj.Attributes.LayerIndex].IsVisible);
+
+            // Iterate through objects just once.
+            foreach (var rhinoObject in allObjects)
+            {
+                // Populate IFC class conduit if enabled.
+                if (ifcEnabled)
+                {
+                    var ifcClass = rhinoObject.Attributes.GetUserString(IfcClassKey);
+                    if (!string.IsNullOrWhiteSpace(ifcClass))
+                    {
+                        _ifcClassDisplayConduit.DataToDraw.Add(new ConduitDrawData
+                        {
+                            ObjectId = rhinoObject.Id,
+                            Text = ifcClass
+                        });
+                    }
+                }
+
+                // Populate Material conduit if enabled.
+                if (materialEnabled)
+                {
+                    var material = rhinoObject.Attributes.GetUserString(MaterialKey);
+                    if (!string.IsNullOrWhiteSpace(material))
+                    {
+                        _materialDisplayConduit.DataToDraw.Add(new ConduitDrawData
+                        {
+                            ObjectId = rhinoObject.Id,
+                            Text = material
+                        });
+                    }
+                }
+            }
+
+            // Set the final enabled state for each conduit.
+            _ifcClassDisplayConduit.Enabled = ifcEnabled;
+            _materialDisplayConduit.Enabled = materialEnabled;
+        }
+
+        // ... (All other methods remain the same) ...
         private void ReloadIfcClassList()
         {
             var doc = RhinoDoc.ActiveDoc;
@@ -590,7 +794,7 @@ namespace MyProject
         private void PopulatePrimaryIfcDropdown()
         {
             var selectedText = _ifcDropdown.SelectedValue is ListItem selectedItem ? selectedItem.Text : null;
-            
+
             _ifcDropdown.Items.Clear();
             _ifcDropdown.Items.Add(new ListItem { Text = "" }); // Add a blank option
             foreach (var primaryClass in _ifcClasses.Keys.OrderBy(k => k))
@@ -717,7 +921,7 @@ namespace MyProject
             var value = selectedItem?.Text;
             if (string.IsNullOrWhiteSpace(value))
             {
-                 RhinoApp.WriteLine($"Please select a valid {friendlyName} from the dropdown first.");
+                RhinoApp.WriteLine($"Please select a valid {friendlyName} from the dropdown first.");
                 return;
             }
             AssignUserString(key, friendlyName, value);
@@ -727,7 +931,7 @@ namespace MyProject
         {
             var doc = RhinoDoc.ActiveDoc;
             if (doc == null) return;
-            
+
             var selectedObjects = doc.Objects.GetSelectedObjects(false, false).ToList();
             if (!selectedObjects.Any())
             {
