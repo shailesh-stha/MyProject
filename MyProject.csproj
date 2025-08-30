@@ -30,9 +30,17 @@
     <None Remove="EmbeddedResources\strLCA32.ico" />
     <None Remove="Resources\addIfcClass256.ico" />
     <None Remove="Resources\addMaterial256.ico" />
+    <None Remove="Resources\Buttons\assignCustom256.ico" />
     <None Remove="Resources\Buttons\assignIfcClass256.ico" />
     <None Remove="Resources\Buttons\assignMaterial256.ico" />
+    <None Remove="Resources\Buttons\btn_refreshList256.ico" />
+    <None Remove="Resources\Buttons\btn_selectObjects256.ico" />
+    <None Remove="Resources\Buttons\columnsView256.ico" />
+    <None Remove="Resources\Buttons\removeCustom256.ico" />
+    <None Remove="Resources\Buttons\selectUnassigned256.ico" />
+    <None Remove="Resources\Buttons\strLogo256.ico" />
     <None Remove="Resources\columnsView.ico" />
+    <None Remove="Resources\Data\customAttribute.csv" />
     <None Remove="Resources\Data\ifcClassList.csv" />
     <None Remove="Resources\Data\ifcClassListWithSubClass.csv" />
     <None Remove="Resources\Data\materialListWithUnits.csv" />
@@ -52,6 +60,15 @@
   </ItemGroup>
   
   <ItemGroup>
+    <EmbeddedResource Include="Resources\Buttons\btn_refreshList256.ico">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\Buttons\btn_selectObjects256.ico">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Resources\Data\customAttribute.csv">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </EmbeddedResource>
     <EmbeddedResource Include="Resources\Data\ifcClassList.csv">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </EmbeddedResource>
@@ -59,21 +76,6 @@
   
   <ItemGroup>
     <EmbeddedResource Include="EmbeddedResources\strLCA32.ico" />
-    <EmbeddedResource Include="Resources\Buttons\assignIfcClass256.ico">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Resources\Buttons\assignMaterial256.ico">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Resources\Buttons\columnsView.ico">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Resources\Buttons\removeIfcClass256.ico">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </EmbeddedResource>
-    <EmbeddedResource Include="Resources\Buttons\removeMaterial256.ico">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </EmbeddedResource>
     <EmbeddedResource Include="Resources\Data\ifcClassListWithSubClass.csv">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </EmbeddedResource>
@@ -94,6 +96,12 @@
     <PackageReference Include="System.Drawing.Common" Version="9.0.8" />
     <PackageReference Include="System.Net.Http" Version="4.3.4" />
     <PackageReference Include="System.Resources.Extensions" Version="9.0.8" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\Buttons\strLogo256.ico">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </EmbeddedResource>
   </ItemGroup>
   
   <ItemGroup>

@@ -119,19 +119,19 @@
   </resheader>
   <assembly alias="System.Windows.Forms" name="System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089" />
   <data name="btn_assignIfcClass256" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\Buttons\assignIfcClass256.ico;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+    <value>..\Resources\Buttons\btn_assignIfcClass256.ico;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </data>
   <data name="btn_assignMaterial256" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\Buttons\assignMaterial256.ico;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+    <value>..\Resources\Buttons\btn_assignMaterial256.ico;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </data>
   <data name="btn_columnsView256" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\Buttons\columnsView.ico;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+    <value>..\Resources\Buttons\btn_columnsView256.ico;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </data>
   <data name="btn_removeIfcClass256" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\Buttons\removeIfcClass256.ico;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+    <value>..\Resources\Buttons\btn_removeIfcClass256.ico;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </data>
   <data name="btn_removeMaterial256" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\Buttons\removeMaterial256.ico;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+    <value>..\Resources\Buttons\btn_removeMaterial256.ico;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </data>
   <data name="icon_strLCA32" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\strLCA32.ico;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
@@ -147,5 +147,26 @@
   </data>
   <data name="ifcClassListWithSubClass" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\Data\ifcClassListWithSubClass.csv;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="customAttribute" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\Data\customAttribute.csv;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="btn_assignCustom256" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\Buttons\btn_assignCustom256.ico;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="btn_removeCustom256" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\Buttons\btn_removeCustom256.ico;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="btn_selectUnassigned256" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\Buttons\btn_selectUnassigned256.ico;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="btn_strLogo256" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\Buttons\strLogo256.ico;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="btn_refreshList256" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\Buttons\btn_refreshList256.ico;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="btn_selectObjects256" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\Buttons\btn_selectObjects256.ico;System.Byte[], mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </data>
 </root>

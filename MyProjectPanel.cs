@@ -4,7 +4,7 @@ using Eto.Drawing;
 using Eto.Forms;
 using MyProject.Properties;
 using Rhino;
-using Rhino.Display; // Required for DisplayConduit
+using Rhino.Display;
 using Rhino.DocObjects;
 using Rhino.Geometry;
 using Rhino.UI.Controls;
@@ -15,6 +15,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace MyProject
 {
@@ -25,170 +26,82 @@ namespace MyProject
     [Guid("01D22D46-3C89-43A5-A92B-A1D6519A4244")]
     public class MyProjectPanel : Panel
     {
-        #region Private Constants
+        #region Constants
         private const string MaterialKey = "STR_MATERIAL";
         private const string IfcClassKey = "STR_IFC_CLASS";
+        private const string QuantityMultiplierKey = "STR_QTY_MULTIPLIER";
+        private const string CustomAttributePrefix = "CUSTOM_";
         #endregion
 
         #region Private Fields
+
+        // Data Storage
         private Dictionary<string, List<string>> _ifcClasses = new Dictionary<string, List<string>>();
-        // Using a dictionary for both order preservation (in modern .NET) and fast lookups.
         private Dictionary<string, MaterialData> _materialLcaData;
-        private readonly Dictionary<Guid, double> _quantityMultipliers = new Dictionary<Guid, double>();
+        private List<string> _customAttributeKeys;
+        private List<string> _customAttributeValues;
 
         // UI Controls
-        private readonly GridView<UserTextEntry> _userTextGridView = new GridView<UserTextEntry> { ShowHeader = true, AllowMultipleSelection = true, Width = 550 };
-        private readonly GridView<DocumentUserTextEntry> _docUserTextGridView = new GridView<DocumentUserTextEntry> { ShowHeader = true, Height = 100, Width = 550 };
+        private readonly GridView<UserTextEntry> _userTextGridView = new GridView<UserTextEntry> { ShowHeader = true, AllowMultipleSelection = true, Width = 450 };
+        private readonly GridView<DocumentUserTextEntry> _docUserTextGridView = new GridView<DocumentUserTextEntry> { ShowHeader = true, Height = 100, Width = 450 };
+        private readonly GridView<ObjectUserTextEntry> _objectUserTextGridView = new GridView<ObjectUserTextEntry> { ShowHeader = true, Height = 150, Width = 450 };
         private readonly GridColumn _qtyMultiplierColumn = new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.QuantityMultiplier)) { TextAlignment = TextAlignment.Right }, HeaderText = "Qty. Multiplier", Editable = true, Width = 90 };
         private readonly Label _totalLcaLabel = new Label { Text = "Total LCA: 0.00" };
-
+        // --- MODIFICATION START: Added a field for the header label to allow dynamic updates ---
+        private Label _selectedObjectAttributesHeaderLabel;
+        // --- MODIFICATION END ---
         private readonly ComboBox _ifcDropdown = new ComboBox { Width = 90, AutoComplete = true };
         private readonly ComboBox _ifcSubclassDropdown = new ComboBox { Width = 90, AutoComplete = true };
         private readonly ComboBox _materialDropdown = new ComboBox { Width = 90, AutoComplete = true };
-
+        private ComboBox _customKeyDropdown;
+        private ComboBox _customValueDropdown;
         private readonly CheckBox _showAllObjectsCheckBox = new CheckBox { Text = "Show All/Selected", Checked = true };
         private readonly CheckBox _showUnassignedCheckBox = new CheckBox { Text = "Show/Hide Unassigned", Checked = true };
         private readonly CheckBox _groupByMaterialCheckBox = new CheckBox { Text = "Group by Material", Checked = false };
         private readonly CheckBox _groupByClassCheckBox = new CheckBox { Text = "Group by Class", Checked = true };
         private readonly CheckBox _aggregateCheckBox = new CheckBox { Text = "Aggregate", Checked = false };
-        private TextArea _notesTextArea;
-
-        // --- MODIFIED: Fields for two conduits and two checkboxes ---
         private CheckBox _displayIfcClassCheckBox;
         private CheckBox _displayMaterialCheckBox;
+        private CheckBox _assignDefOnCreateCheckBox;
+        private CheckBox _assignCustomOnCreateCheckBox;
+
+        // Conduits
         private readonly AttributeDisplayConduit _ifcClassDisplayConduit;
         private readonly AttributeDisplayConduit _materialDisplayConduit;
 
+        // State Flags
+        private bool _isAssigningOnCreate = false;
         private bool _isSyncingSelection = false;
         private bool _needsRefresh = false;
         private bool _isMouseOverGrid = false;
+
         #endregion
 
-        #region Data-Binding and Conduit Classes
-        private class UserTextEntry
-        {
-            public string SerialNumber { get; set; }
-            public string IfcClass { get; set; }
-            public string Value { get; set; }
-            public double ReferenceQuantity { get; set; }
-            public string ReferenceUnit { get; set; }
-            public double ReferenceLca { get; set; }
-            public string DisplayReference => !string.IsNullOrWhiteSpace(ReferenceUnit) ? $"{ReferenceQuantity:0.00} {ReferenceUnit}" : "N/A";
-            public int Count { get; set; }
-            public double Quantity { get; set; }
-            public string QuantityUnit { get; set; }
-            public string DisplayQuantity => !string.IsNullOrWhiteSpace(QuantityUnit) ? $"{Quantity:0.00} {QuantityUnit}" : "N/A";
-            public string QuantityType { get; set; }
-            public double QuantityMultiplier { get; set; } = 1.0;
-            public double QuantityTotal => Quantity * QuantityMultiplier;
-            public double Lca { get; set; }
-            public List<Guid> ObjectIds { get; set; } = new List<Guid>();
-        }
-
-        private class DocumentUserTextEntry
-        {
-            public string Key { get; set; }
-            public string Value { get; set; }
-        }
-
-        // Helper class to pass data to the conduit. Using the object's ID is more robust.
-        private class ConduitDrawData
-        {
-            public Guid ObjectId { get; set; }
-            public string Text { get; set; }
-        }
-
-        // --- RENAMED: Conduit is now generic for any attribute ---
-        private class AttributeDisplayConduit : DisplayConduit
-        {
-            public List<ConduitDrawData> DataToDraw { get; set; } = new List<ConduitDrawData>();
-
-            protected override void PostDrawObjects(DrawEventArgs e)
-            {
-                if (!e.Display.Viewport.IsPerspectiveProjection)
-                {
-                    return;
-                }
-
-                e.Display.PushDepthTesting(false);
-                e.Display.PushDepthWriting(false);
-
-                var textColor = System.Drawing.Color.Black;
-                var backgroundColor = System.Drawing.Color.White;
-                const string fontFace = "Arial";
-                const int textPixelHeight = 10;
-
-                foreach (var data in DataToDraw)
-                {
-                    var rhinoObject = e.RhinoDoc.Objects.FindId(data.ObjectId);
-                    if (rhinoObject == null) continue;
-
-                    var bbox = rhinoObject.Geometry.GetBoundingBox(true);
-                    if (!bbox.IsValid) continue;
-
-                    var location = bbox.Center;
-                    var text = data.Text;
-
-                    var camDir = e.Display.Viewport.CameraDirection;
-                    var camUp = e.Display.Viewport.CameraUp;
-                    var screenXAxis = Vector3d.CrossProduct(camDir, camUp);
-
-                    var worldToScreen = e.Display.Viewport.GetTransform(CoordinateSystem.World, CoordinateSystem.Screen);
-                    var locationOnScreen = location;
-                    locationOnScreen.Transform(worldToScreen);
-                    var pointAboveOnScreen = new Point3d(locationOnScreen.X, locationOnScreen.Y - textPixelHeight, locationOnScreen.Z);
-
-                    var screenToWorld = e.Display.Viewport.GetTransform(CoordinateSystem.Screen, CoordinateSystem.World);
-                    pointAboveOnScreen.Transform(screenToWorld);
-                    var worldHeight = location.DistanceTo(pointAboveOnScreen);
-
-                    var leaderDirection = screenXAxis + camUp;
-                    leaderDirection.Unitize();
-
-                    var leaderLength = worldHeight * 5.0;
-                    var textLocation = location + (leaderDirection * leaderLength);
-
-                    e.Display.DrawArrow(new Line(textLocation, location), textColor);
-
-                    var tempTextEntity = new Text3d(text, Plane.WorldXY, worldHeight) { FontFace = fontFace };
-                    var tempBbox = tempTextEntity.BoundingBox;
-                    var worldWidth = tempBbox.Max.X - tempBbox.Min.X;
-
-                    var padding = worldHeight * 0.2;
-                    var backgroundWidth = worldWidth + (2 * padding);
-                    var backgroundHeight = worldHeight + (2 * padding);
-                    var backgroundOrigin = textLocation - (screenXAxis * padding) - (camUp * padding);
-
-                    var corner1 = backgroundOrigin;
-                    var corner2 = backgroundOrigin + (screenXAxis * backgroundWidth);
-                    var corner3 = backgroundOrigin + (screenXAxis * backgroundWidth) + (camUp * backgroundHeight);
-                    var corner4 = backgroundOrigin + (camUp * backgroundHeight);
-
-                    var backgroundCorners = new Point3d[] { corner1, corner2, corner3, corner4 };
-
-                    var textPlane = new Plane(textLocation, screenXAxis, camUp);
-                    e.Display.Draw3dText(text, textColor, textPlane, worldHeight, fontFace);
-                }
-
-                e.Display.PopDepthTesting();
-                e.Display.PopDepthWriting();
-            }
-        }
-        #endregion
-
+        #region Constructor
+        /// <summary>
+        /// Initializes a new instance of the MyProjectPanel class.
+        /// </summary>
         public MyProjectPanel()
         {
-            _ifcClassDisplayConduit = new AttributeDisplayConduit();
-            _materialDisplayConduit = new AttributeDisplayConduit();
+            _ifcClassDisplayConduit = new AttributeDisplayConduit { LeaderLengthMultiplier = 5.0 };
+            _materialDisplayConduit = new AttributeDisplayConduit { LeaderLengthMultiplier = 8.0 };
 
             InitializeLayout();
             RegisterEventHandlers();
 
+            // Load initial data
             ReloadIfcClassList();
             ReloadMaterialList();
+            ReloadCustomAttributeList();
             UpdatePanelData();
         }
+        #endregion
 
+        #region UI Initialization
+
+        /// <summary>
+        /// Sets up the overall layout and content of the panel.
+        /// </summary>
         private void InitializeLayout()
         {
             Styles.Add<Label>("bold_label", label =>
@@ -199,52 +112,31 @@ namespace MyProject
 
             var mainLayout = new DynamicLayout { Spacing = new Size(6, 6), Padding = new Padding(10) };
 
-            mainLayout.Add(new Expander
-            {
-                Header = new Label { Text = "Utility Buttons", Style = "bold_label" },
-                Content = CreateUtilityButtonsLayout(),
-                Expanded = false
-            });
+            // --- MODIFICATION START: Initialize the header label field ---
+            _selectedObjectAttributesHeaderLabel = new Label { Text = "Selected Object(s) Attributes", Style = "bold_label" };
+            // --- MODIFICATION END ---
 
-            mainLayout.Add(new Expander
-            {
-                Header = new Label { Text = "Definition", Style = "bold_label" },
-                Content = CreateDefinitionLayout(),
-                Expanded = true
-            });
-
-            mainLayout.Add(new Expander
-            {
-                Header = new Label { Text = "Attribute User Text", Style = "bold_label" },
-                Content = CreateAttributeGridLayout(),
-                Expanded = true
-            });
-
-            mainLayout.Add(new Expander
-            {
-                Header = new Label { Text = "Viewport Display", Style = "bold_label" },
-                Content = CreateDisplayOptionsLayout(),
-                Expanded = true
-            });
-
-            mainLayout.Add(new Expander
-            {
-                Header = new Label { Text = "Document Notes/User Text", Style = "bold_label" },
-                Content = CreateCombinedNotesAndUserTextLayout(),
-                Expanded = false
-            });
-
-            mainLayout.Add(null, true);
+            mainLayout.Add(new Expander { Header = new Label { Text = "Utility Buttons", Style = "bold_label" }, Content = CreateUtilityButtonsLayout(), Expanded = true });
+            mainLayout.Add(new Expander { Header = new Label { Text = "Definition", Style = "bold_label" }, Content = CreateDefinitionLayout(), Expanded = true });
+            mainLayout.Add(new Expander { Header = new Label { Text = "Custom Definition", Style = "bold_label" }, Content = CreateCustomDefinitionLayout(), Expanded = true });
+            mainLayout.Add(new Expander { Header = new Label { Text = "Attribute User Text", Style = "bold_label" }, Content = CreateAttributeGridLayout(), Expanded = true });
+            // --- MODIFICATION START: Use the new field for the expander's header ---
+            mainLayout.Add(new Expander { Header = _selectedObjectAttributesHeaderLabel, Content = CreateObjectUserTextLayout(), Expanded = true });
+            // --- MODIFICATION END ---
+            mainLayout.Add(new Expander { Header = new Label { Text = "Viewport Display", Style = "bold_label" }, Content = CreateDisplayOptionsLayout(), Expanded = true });
+            mainLayout.Add(new Expander { Header = new Label { Text = "Document User Text", Style = "bold_label" }, Content = CreateDocumentUserTextLayout(), Expanded = false });
+            mainLayout.Add(null, true); // Stretchy space to push content up
 
             Content = new Scrollable { Content = mainLayout, Border = BorderType.None };
-            MinimumSize = new Size(400, 550);
+            MinimumSize = new Size(400, 450);
         }
 
-        #region UI Layout Methods
-
+        /// <summary>
+        /// Creates the layout for utility buttons like 'Export CSV'.
+        /// </summary>
         private Control CreateUtilityButtonsLayout()
         {
-            var structureIcon = BytesToEtoBitmap(Resources.btn_strLCA256, new Size(18, 18));
+            var structureIcon = BytesToEtoBitmap(Resources.btn_strLogo256, new Size(18, 18));
             var btnStructure = new Button { Image = structureIcon, ToolTip = "Visit str-ucture.com", MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
             btnStructure.Click += (s, e) =>
             {
@@ -253,86 +145,101 @@ namespace MyProject
                 catch (Exception ex) { RhinoApp.WriteLine($"Error opening website: {ex.Message}"); }
             };
 
-            var buttonLayout = new StackLayout
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = 5,
-                Items = { btnStructure }
-            };
+            var exportButton = new Button { Text = "Export CSV", ToolTip = "Export the grid data to a CSV file." };
+            exportButton.Click += OnExportToCsvClick;
 
+            var buttonLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { btnStructure, exportButton } };
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
             layout.AddRow(buttonLayout);
             return layout;
         }
 
-        private Control CreateCombinedNotesAndUserTextLayout()
-        {
-            var layout = new DynamicLayout { Spacing = new Size(6, 6) };
-
-            _notesTextArea = new TextArea
-            {
-                Width = 550,
-                Height = 80,
-                Text = RhinoDoc.ActiveDoc?.Notes ?? string.Empty
-            };
-
-            var saveButton = new Button { Text = "Save Notes" };
-            saveButton.Click += (s, e) =>
-            {
-                var doc = RhinoDoc.ActiveDoc;
-                if (doc != null)
-                {
-                    doc.Notes = _notesTextArea.Text;
-                    RhinoApp.WriteLine("Document notes saved.");
-                }
-            };
-
-            layout.AddRow(_notesTextArea);
-            layout.AddRow(saveButton);
-            layout.Add(new Divider());
-
-            _docUserTextGridView.Columns.Add(new GridColumn { HeaderText = "Key", DataCell = new TextBoxCell(nameof(DocumentUserTextEntry.Key)), Editable = false, Width = 150 });
-            _docUserTextGridView.Columns.Add(new GridColumn { HeaderText = "Value", DataCell = new TextBoxCell(nameof(DocumentUserTextEntry.Value)), Editable = false });
-            var refreshButton = new Button { Text = "Refresh User Text" };
-            refreshButton.Click += (s, e) => UpdatePanelData();
-            layout.AddRow(new Scrollable { Content = _docUserTextGridView });
-            layout.AddRow(refreshButton);
-
-            return layout;
-        }
-
+        /// <summary>
+        /// Creates the layout for defining IFC Class and Material attributes.
+        /// </summary>
         private Control CreateDefinitionLayout()
         {
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
 
+            // Load icons for this section
+            var selectIcon = BytesToEtoBitmap(Resources.btn_selectObjects256, new Size(18, 18));
+            var refreshIcon = BytesToEtoBitmap(Resources.btn_refreshList256, new Size(18, 18));
+
+            // IFC Class controls
+            var selectIfcButton = new Button { Image = selectIcon, ToolTip = "Select objects matching the specified IfcClass.", MinimumSize = Size.Empty };
+            selectIfcButton.Click += OnSelectByIfcClassClick;
             var assignIfcButton = new Button { Image = BytesToEtoBitmap(Resources.btn_assignIfcClass256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
             assignIfcButton.Click += OnAssignIfcClassClick;
             var removeIfcButton = new Button { Image = BytesToEtoBitmap(Resources.btn_removeIfcClass256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
             removeIfcButton.Click += (s, e) => RemoveUserString(IfcClassKey, "IfcClass");
-            var refreshIfcButton = new Button { Text = "Update Options" };
+            var refreshIfcButton = new Button { Image = refreshIcon, ToolTip = "Refresh IFC Class list from source.", MinimumSize = Size.Empty };
             refreshIfcButton.Click += (s, e) => ReloadIfcClassList();
 
             var ifcClassLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { _ifcDropdown, _ifcSubclassDropdown } };
-            var ifcButtonsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { assignIfcButton, removeIfcButton, refreshIfcButton } };
-            layout.AddRow(new Label { Text = "IfcClass:", ToolTip = "STR_IFC_CLASS" }, ifcClassLayout, ifcButtonsLayout);
+            var ifcButtonsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { assignIfcButton, removeIfcButton, selectIfcButton, refreshIfcButton } };
+            layout.AddRow(new Label { Text = "IfcClass:", ToolTip = IfcClassKey }, ifcClassLayout, ifcButtonsLayout);
 
-            _ifcDropdown.SelectedValueChanged += OnPrimaryIfcClassChanged;
-
+            // Material controls
+            var selectMaterialButton = new Button { Image = selectIcon, ToolTip = "Select objects matching the specified Material.", MinimumSize = Size.Empty };
+            selectMaterialButton.Click += OnSelectByMaterialClick;
             var assignMaterialButton = new Button { Image = BytesToEtoBitmap(Resources.btn_assignMaterial256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
             assignMaterialButton.Click += (s, e) => AssignUserString(MaterialKey, "Material", _materialDropdown.SelectedValue as ListItem);
             var removeMaterialButton = new Button { Image = BytesToEtoBitmap(Resources.btn_removeMaterial256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
             removeMaterialButton.Click += (s, e) => RemoveUserString(MaterialKey, "Material");
-            var refreshMaterialButton = new Button { Text = "Update Options" };
+            var refreshMaterialButton = new Button { Image = refreshIcon, ToolTip = "Refresh Material list from source.", MinimumSize = Size.Empty };
             refreshMaterialButton.Click += (s, e) => ReloadMaterialList();
 
-            var materialButtonsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { assignMaterialButton, removeMaterialButton, refreshMaterialButton } };
-            layout.AddRow(new Label { Text = "Material:", ToolTip = "STR_MATERIAL" }, _materialDropdown, materialButtonsLayout);
+            var materialButtonsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { assignMaterialButton, removeMaterialButton, selectMaterialButton, refreshMaterialButton } };
+            layout.AddRow(new Label { Text = "Material:", ToolTip = MaterialKey }, _materialDropdown, materialButtonsLayout);
+
+            // Assign on Creation checkbox
+            _assignDefOnCreateCheckBox = new CheckBox { Text = "Assign On Creation", ToolTip = "If checked, automatically assigns the selected IfcClass and Material to newly created objects." };
+            layout.AddRow(null, _assignDefOnCreateCheckBox);
 
             return layout;
         }
 
+        /// <summary>
+        /// Creates the layout for defining custom attributes.
+        /// </summary>
+        private Control CreateCustomDefinitionLayout()
+        {
+            var layout = new DynamicLayout { Spacing = new Size(6, 6) };
+
+            _customKeyDropdown = new ComboBox { Width = 90, AutoComplete = true };
+            _customValueDropdown = new ComboBox { Width = 90, AutoComplete = true };
+
+            // Load icons
+            var selectIcon = BytesToEtoBitmap(Resources.btn_selectObjects256, new Size(18, 18));
+            var refreshIcon = BytesToEtoBitmap(Resources.btn_refreshList256, new Size(18, 18));
+
+            // Custom attribute controls
+            var selectCustomButton = new Button { Image = selectIcon, ToolTip = "Select objects matching the specified custom key and/or value.", MinimumSize = Size.Empty };
+            selectCustomButton.Click += OnSelectByCustomAttributeClick;
+            var assignButton = new Button { Image = BytesToEtoBitmap(Resources.btn_assignCustom256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
+            assignButton.Click += OnAssignCustomAttributeClick;
+            var removeButton = new Button { Image = BytesToEtoBitmap(Resources.btn_removeCustom256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
+            removeButton.Click += OnRemoveCustomAttributeClick;
+            var refreshCustomButton = new Button { Image = refreshIcon, ToolTip = "Refresh Custom Attribute lists from source.", MinimumSize = Size.Empty };
+            refreshCustomButton.Click += (s, e) => ReloadCustomAttributeList();
+
+            var dropdownLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { _customKeyDropdown, _customValueDropdown } };
+            var buttonsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { assignButton, removeButton, selectCustomButton } };
+            layout.AddRow(new Label { Text = "Custom:", ToolTip = "Assigns a single, replaceable custom attribute." }, dropdownLayout, buttonsLayout, refreshCustomButton);
+
+            // Assign on Creation checkbox
+            _assignCustomOnCreateCheckBox = new CheckBox { Text = "Assign On Creation", ToolTip = "If checked, automatically assigns the selected custom attribute to newly created objects." };
+            layout.AddRow(null, _assignCustomOnCreateCheckBox);
+
+            return layout;
+        }
+
+        /// <summary>
+        /// Creates the layout for the main attribute grid view and its associated controls.
+        /// </summary>
         private Control CreateAttributeGridLayout()
         {
+            // Initialize GridView columns if they don't exist
             if (_userTextGridView.Columns.Count == 0)
             {
                 _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.SerialNumber)), HeaderText = "SN", Editable = false, Width = 30 });
@@ -349,6 +256,92 @@ namespace MyProject
 
             _qtyMultiplierColumn.Visible = !_aggregateCheckBox.Checked ?? true;
 
+            // View and grouping controls
+            var columnsViewButton = new Button { Image = BytesToEtoBitmap(Resources.btn_columnsView256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
+            columnsViewButton.Click += (s, e) => new ColumnVisibilityDialog(_userTextGridView).ShowModal(this);
+            var selectUnassignedButton = new Button { Image = BytesToEtoBitmap(Resources.btn_selectUnassigned256, new Size(18, 18)), ToolTip = "Select objects with no material assigned.", MinimumSize = Size.Empty };
+            selectUnassignedButton.Click += OnSelectUnassignedClick;
+
+            var viewOptionsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 10, Items = { _showAllObjectsCheckBox, _showUnassignedCheckBox } };
+            var groupingOptionsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 10, Items = { _groupByClassCheckBox, _groupByMaterialCheckBox, _aggregateCheckBox, null, selectUnassignedButton, columnsViewButton } };
+
+            var layout = new DynamicLayout { Spacing = new Size(6, 6) };
+            layout.AddRow(viewOptionsLayout);
+            layout.AddRow(groupingOptionsLayout);
+            layout.AddRow(new Scrollable { Content = _userTextGridView, Width = 450, Height = 220 });
+            layout.AddRow(_totalLcaLabel);
+            return layout;
+        }
+
+        /// <summary>
+        /// Creates the layout for displaying all attributes of the selected object(s).
+        /// </summary>
+        private Control CreateObjectUserTextLayout()
+        {
+            var layout = new DynamicLayout { Spacing = new Size(6, 6) };
+
+            _objectUserTextGridView.Columns.Add(new GridColumn { HeaderText = "Key", DataCell = new TextBoxCell(nameof(ObjectUserTextEntry.Key)), Editable = false, Width = 150 });
+            _objectUserTextGridView.Columns.Add(new GridColumn { HeaderText = "Value", DataCell = new TextBoxCell(nameof(ObjectUserTextEntry.Value)), Editable = false });
+
+            layout.AddRow(new Scrollable { Content = _objectUserTextGridView });
+            return layout;
+        }
+
+        /// <summary>
+        /// Creates the layout for viewport display options (conduits).
+        /// </summary>
+        private Control CreateDisplayOptionsLayout()
+        {
+            _displayIfcClassCheckBox = new CheckBox { Text = "Display IFC Class", Checked = false };
+            _displayMaterialCheckBox = new CheckBox { Text = "Display Material", Checked = false };
+
+            var layout = new DynamicLayout { Spacing = new Size(6, 6) };
+            layout.AddRow(_displayIfcClassCheckBox);
+            layout.AddRow(_displayMaterialCheckBox);
+            return layout;
+        }
+
+        /// <summary>
+        /// Creates the layout for displaying Document User Text.
+        /// </summary>
+        private Control CreateDocumentUserTextLayout()
+        {
+            var layout = new DynamicLayout { Spacing = new Size(6, 6) };
+
+            _docUserTextGridView.Columns.Add(new GridColumn { HeaderText = "Key", DataCell = new TextBoxCell(nameof(DocumentUserTextEntry.Key)), Editable = false, Width = 150 });
+            _docUserTextGridView.Columns.Add(new GridColumn { HeaderText = "Value", DataCell = new TextBoxCell(nameof(DocumentUserTextEntry.Value)), Editable = false });
+
+            var refreshButton = new Button { Text = "Refresh User Text" };
+            refreshButton.Click += (s, e) => UpdatePanelData();
+
+            layout.AddRow(new Scrollable { Content = _docUserTextGridView });
+            layout.AddRow(refreshButton);
+            return layout;
+        }
+
+        #endregion
+
+        #region Rhino & UI Event Handlers
+
+        /// <summary>
+        /// Registers all necessary event handlers for Rhino documents and UI controls.
+        /// </summary>
+        private void RegisterEventHandlers()
+        {
+            // Rhino Document Events
+            RhinoDoc.SelectObjects += OnDocumentStateChanged;
+            RhinoDoc.DeselectObjects += OnDocumentStateChanged;
+            RhinoDoc.DeselectAllObjects += OnDocumentStateChanged;
+            RhinoDoc.DeleteRhinoObject += OnDocumentStateChanged;
+            RhinoDoc.ReplaceRhinoObject += OnDocumentStateChanged;
+            RhinoDoc.UserStringChanged += OnDocumentStateChanged;
+            RhinoDoc.EndOpenDocument += OnDocumentChanged;
+            RhinoDoc.NewDocument += OnDocumentChanged;
+            RhinoDoc.AddRhinoObject += OnObjectAdded;
+            RhinoApp.Idle += OnRhinoIdle;
+
+            // UI Control Events
+            _ifcDropdown.SelectedValueChanged += OnPrimaryIfcClassChanged;
             _showAllObjectsCheckBox.CheckedChanged += (s, e) => UpdatePanelData();
             _showUnassignedCheckBox.CheckedChanged += (s, e) => UpdatePanelData();
             _aggregateCheckBox.CheckedChanged += OnAggregateChanged;
@@ -358,75 +351,251 @@ namespace MyProject
             _userTextGridView.CellEdited += OnGridCellEdited;
             _userTextGridView.MouseEnter += (s, e) => _isMouseOverGrid = true;
             _userTextGridView.MouseLeave += (s, e) => _isMouseOverGrid = false;
-
-            var columnsViewButton = new Button { Image = BytesToEtoBitmap(Resources.btn_columnsView256, new Size(16, 16)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
-            columnsViewButton.Click += (s, e) => new ColumnVisibilityDialog(_userTextGridView).ShowModal(this);
-            var selectUnassignedButton = new Button { Text = "Select Unassigned" };
-            selectUnassignedButton.Click += OnSelectUnassignedClick;
-
-            var viewOptionsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 10, Items = { _showAllObjectsCheckBox, _showUnassignedCheckBox } };
-            var groupingOptionsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 10, Items = { _groupByClassCheckBox, _groupByMaterialCheckBox, _aggregateCheckBox, null, selectUnassignedButton, columnsViewButton } };
-
-            var layout = new DynamicLayout { Spacing = new Size(6, 6) };
-            layout.AddRow(viewOptionsLayout);
-            layout.AddRow(groupingOptionsLayout);
-            layout.AddRow(new Scrollable { Content = _userTextGridView, Height = 220 });
-            layout.AddRow(_totalLcaLabel);
-            return layout;
-        }
-
-        private Control CreateDisplayOptionsLayout()
-        {
-            _displayIfcClassCheckBox = new CheckBox { Text = "Display IFC Class", Checked = false };
             _displayIfcClassCheckBox.CheckedChanged += OnDisplayAttributeTextCheckedChanged;
-
-            _displayMaterialCheckBox = new CheckBox { Text = "Display Material", Checked = false };
             _displayMaterialCheckBox.CheckedChanged += OnDisplayAttributeTextCheckedChanged;
-
-            var layout = new DynamicLayout { Spacing = new Size(6, 6) };
-            layout.AddRow(_displayIfcClassCheckBox);
-            layout.AddRow(_displayMaterialCheckBox);
-            return layout;
         }
 
-        private static Bitmap BytesToEtoBitmap(byte[] bytes, Size? desiredSize = null)
+        private void OnDocumentStateChanged(object sender, EventArgs e) => UpdatePanelDataSafe();
+        private void OnDocumentChanged(object sender, EventArgs e)
         {
+            _needsRefresh = true;
+            ReloadIfcClassList();
+            ReloadMaterialList();
+            ReloadCustomAttributeList();
+        }
+        private void OnRhinoIdle(object sender, EventArgs e)
+        {
+            if (_needsRefresh)
+            {
+                _needsRefresh = false;
+                UpdatePanelData();
+            }
+        }
+        private void OnObjectAdded(object sender, RhinoObjectEventArgs e)
+        {
+            if (_isAssigningOnCreate) return;
+
+            var doc = e.TheObject.Document;
+            if (doc == null) return;
+
+            bool assignDef = _assignDefOnCreateCheckBox?.Checked == true;
+            bool assignCustom = _assignCustomOnCreateCheckBox?.Checked == true;
+            if (!assignDef && !assignCustom) return;
+
+            _isAssigningOnCreate = true;
             try
             {
-                if (bytes == null || bytes.Length == 0) return null;
-                using (var ms = new MemoryStream(bytes))
+                var newAttributes = e.TheObject.Attributes.Duplicate();
+                bool attributesModified = false;
+
+                if (assignDef)
                 {
-                    var originalBitmap = new Bitmap(ms);
-                    if (desiredSize.HasValue)
+                    string primaryClass = (_ifcDropdown.SelectedValue as ListItem)?.Text;
+                    if (!string.IsNullOrWhiteSpace(primaryClass))
                     {
-                        return new Bitmap(originalBitmap, desiredSize.Value.Width, desiredSize.Value.Height, ImageInterpolation.High);
+                        string secondaryClass = (_ifcSubclassDropdown.SelectedValue as ListItem)?.Text;
+                        string combinedClass = !string.IsNullOrWhiteSpace(secondaryClass) ? $"{primaryClass}, {secondaryClass}" : primaryClass;
+
+                        if (newAttributes.SetUserString(IfcClassKey, combinedClass))
+                            attributesModified = true;
                     }
-                    return originalBitmap;
+
+                    string materialValue = (_materialDropdown.SelectedValue as ListItem)?.Text;
+                    if (!string.IsNullOrWhiteSpace(materialValue))
+                    {
+                        if (newAttributes.SetUserString(MaterialKey, materialValue))
+                            attributesModified = true;
+                    }
+                }
+
+                if (assignCustom)
+                {
+                    string key = (_customKeyDropdown.SelectedValue as ListItem)?.Text;
+                    string value = (_customValueDropdown.SelectedValue as ListItem)?.Text;
+                    if (!string.IsNullOrWhiteSpace(key) && !string.IsNullOrWhiteSpace(value))
+                    {
+                        var keysToRemove = newAttributes.GetUserStrings().AllKeys
+                                             .Where(k => k.StartsWith(CustomAttributePrefix))
+                                             .ToList();
+                        foreach (var keyToRemove in keysToRemove)
+                        {
+                            newAttributes.DeleteUserString(keyToRemove);
+                        }
+
+                        string formattedKey = $"{CustomAttributePrefix}{key}";
+                        if (newAttributes.SetUserString(formattedKey, value))
+                            attributesModified = true;
+                    }
+                }
+
+                if (attributesModified)
+                {
+                    doc.Objects.ModifyAttributes(e.ObjectId, newAttributes, false);
                 }
             }
-            catch (Exception ex)
+            finally
             {
-                RhinoApp.WriteLine($"Error creating bitmap from resource bytes: {ex.Message}");
-                return null;
+                _isAssigningOnCreate = false;
             }
         }
-        #endregion
-
-        #region Event Handlers
-        private void RegisterEventHandlers()
+        private void OnExportToCsvClick(object sender, EventArgs e)
         {
-            RhinoDoc.SelectObjects += OnDocumentStateChanged;
-            RhinoDoc.DeselectObjects += OnDocumentStateChanged;
-            RhinoDoc.DeselectAllObjects += OnDocumentStateChanged;
-            RhinoDoc.AddRhinoObject += OnDocumentStateChanged;
-            RhinoDoc.DeleteRhinoObject += OnDocumentStateChanged;
-            RhinoDoc.ReplaceRhinoObject += OnDocumentStateChanged;
-            RhinoDoc.UserStringChanged += OnDocumentStateChanged;
-            RhinoDoc.EndOpenDocument += OnDocumentChanged;
-            RhinoDoc.NewDocument += OnDocumentChanged;
-            RhinoApp.Idle += OnRhinoIdle;
-        }
+            if (_userTextGridView.DataStore == null || !_userTextGridView.DataStore.Any())
+            {
+                RhinoApp.WriteLine("No data available to export.");
+                return;
+            }
 
+            var data = _userTextGridView.DataStore.ToList();
+            var dialog = new SaveFileDialog
+            {
+                Title = "Export Grid Data to CSV",
+                FileName = $"LcaDataExport_{DateTime.Now:yyyyMMdd_HHmm}.csv",
+                Filters = { new FileFilter("CSV Files (*.csv)", ".csv") }
+            };
+
+            if (dialog.ShowDialog(this) == DialogResult.Ok)
+            {
+                try
+                {
+                    var sb = new StringBuilder();
+                    sb.AppendLine("ObjectIds,IfcClass,Material,Count,Quantity,QuantityUnit,QuantityMultiplier,QuantityTotal,LCA_kgCO2eq");
+
+                    foreach (var entry in data)
+                    {
+                        var ids = string.Join(";", entry.ObjectIds);
+                        var line = $"\"{ids}\",\"{entry.IfcClass}\",\"{entry.Value}\",{entry.Count},{entry.Quantity:F3},\"{entry.QuantityUnit}\",{entry.QuantityMultiplier:F3},{entry.QuantityTotal:F3},{entry.Lca:F3}";
+                        sb.AppendLine(line);
+                    }
+
+                    File.WriteAllText(dialog.FileName, sb.ToString());
+                    RhinoApp.WriteLine($"Data successfully exported to {dialog.FileName}");
+                }
+                catch (Exception ex)
+                {
+                    RhinoApp.WriteLine($"Error exporting data: {ex.Message}");
+                }
+            }
+        }
+        private void OnSelectByIfcClassClick(object sender, EventArgs e)
+        {
+            var doc = RhinoDoc.ActiveDoc;
+            if (doc == null) return;
+
+            string primaryClass = (_ifcDropdown.SelectedValue as ListItem)?.Text;
+            if (string.IsNullOrWhiteSpace(primaryClass))
+            {
+                RhinoApp.WriteLine("Please select an IfcClass to search for.");
+                return;
+            }
+
+            string secondaryClass = (_ifcSubclassDropdown.SelectedValue as ListItem)?.Text;
+            string ifcTarget = !string.IsNullOrWhiteSpace(secondaryClass) ? $"{primaryClass}, {secondaryClass}" : primaryClass;
+
+            var idsToSelect = doc.Objects
+                .Where(obj => obj.Attributes.GetUserString(IfcClassKey) == ifcTarget)
+                .Select(obj => obj.Id)
+                .ToList();
+
+            doc.Objects.UnselectAll();
+            if (idsToSelect.Any())
+            {
+                doc.Objects.Select(idsToSelect, true);
+                RhinoApp.WriteLine($"{idsToSelect.Count} object(s) selected with IfcClass '{ifcTarget}'.");
+            }
+            else
+            {
+                RhinoApp.WriteLine($"No objects found with IfcClass '{ifcTarget}'.");
+            }
+            doc.Views.Redraw();
+        }
+        private void OnSelectByMaterialClick(object sender, EventArgs e)
+        {
+            var doc = RhinoDoc.ActiveDoc;
+            if (doc == null) return;
+
+            string materialTarget = (_materialDropdown.SelectedValue as ListItem)?.Text;
+            if (string.IsNullOrWhiteSpace(materialTarget))
+            {
+                RhinoApp.WriteLine("Please select a Material to search for.");
+                return;
+            }
+
+            var idsToSelect = doc.Objects
+                .Where(obj => obj.Attributes.GetUserString(MaterialKey) == materialTarget)
+                .Select(obj => obj.Id)
+                .ToList();
+
+            doc.Objects.UnselectAll();
+            if (idsToSelect.Any())
+            {
+                doc.Objects.Select(idsToSelect, true);
+                RhinoApp.WriteLine($"{idsToSelect.Count} object(s) selected with Material '{materialTarget}'.");
+            }
+            else
+            {
+                RhinoApp.WriteLine($"No objects found with Material '{materialTarget}'.");
+            }
+            doc.Views.Redraw();
+        }
+        private void OnSelectByCustomAttributeClick(object sender, EventArgs e)
+        {
+            var doc = RhinoDoc.ActiveDoc;
+            if (doc == null) return;
+
+            string keyTarget = (_customKeyDropdown.SelectedValue as ListItem)?.Text;
+            string valueTarget = (_customValueDropdown.SelectedValue as ListItem)?.Text;
+
+            if (string.IsNullOrWhiteSpace(keyTarget) && string.IsNullOrWhiteSpace(valueTarget))
+            {
+                RhinoApp.WriteLine("Please select a custom key or value to search for.");
+                return;
+            }
+
+            var idsToSelect = new List<Guid>();
+            var allObjects = doc.Objects.GetObjectList(ObjectType.AnyObject);
+            string formattedKeyTarget = string.IsNullOrWhiteSpace(keyTarget) ? null : $"{CustomAttributePrefix}{keyTarget}";
+
+            foreach (var obj in allObjects)
+            {
+                var userStrings = obj.Attributes.GetUserStrings();
+                if (userStrings == null || userStrings.Count == 0) continue;
+
+                bool match = false;
+
+                if (!string.IsNullOrWhiteSpace(formattedKeyTarget) && !string.IsNullOrWhiteSpace(valueTarget))
+                {
+                    match = userStrings.Get(formattedKeyTarget) == valueTarget;
+                }
+                else if (!string.IsNullOrWhiteSpace(formattedKeyTarget))
+                {
+                    match = userStrings.Get(formattedKeyTarget) != null;
+                }
+                else if (!string.IsNullOrWhiteSpace(valueTarget))
+                {
+                    match = userStrings.AllKeys
+                                       .Where(k => k.StartsWith(CustomAttributePrefix))
+                                       .Any(k => userStrings.Get(k) == valueTarget);
+                }
+
+                if (match)
+                {
+                    idsToSelect.Add(obj.Id);
+                }
+            }
+
+            doc.Objects.UnselectAll();
+            if (idsToSelect.Any())
+            {
+                doc.Objects.Select(idsToSelect, true);
+                RhinoApp.WriteLine($"{idsToSelect.Count} matching object(s) selected.");
+            }
+            else
+            {
+                RhinoApp.WriteLine("No objects found with the specified custom criteria.");
+            }
+            doc.Views.Redraw();
+        }
         private void OnAssignIfcClassClick(object sender, EventArgs e)
         {
             string primaryClass = (_ifcDropdown.SelectedValue as ListItem)?.Text;
@@ -438,56 +607,113 @@ namespace MyProject
                 return;
             }
 
-            string combinedClass = primaryClass;
-            if (!string.IsNullOrWhiteSpace(secondaryClass))
-            {
-                combinedClass += $", {secondaryClass}";
-            }
-
+            string combinedClass = !string.IsNullOrWhiteSpace(secondaryClass) ? $"{primaryClass}, {secondaryClass}" : primaryClass;
             AssignUserString(IfcClassKey, "IfcClass", combinedClass);
         }
-
-        private void OnPrimaryIfcClassChanged(object sender, EventArgs e)
+        private void OnAssignCustomAttributeClick(object sender, EventArgs e)
         {
-            UpdateSubclassDropdown();
-        }
+            var doc = RhinoDoc.ActiveDoc;
+            if (doc == null) return;
 
-        private void OnRhinoIdle(object sender, EventArgs e)
-        {
-            if (_needsRefresh)
+            string key = (_customKeyDropdown.SelectedValue as ListItem)?.Text;
+            string value = (_customValueDropdown.SelectedValue as ListItem)?.Text;
+
+            if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(value))
             {
-                _needsRefresh = false;
-                UpdatePanelData();
+                RhinoApp.WriteLine("Please select a key and a value for the custom attribute.");
+                return;
+            }
+
+            var selectedObjects = doc.Objects.GetSelectedObjects(false, false).ToList();
+            if (!selectedObjects.Any())
+            {
+                RhinoApp.WriteLine("Please select one or more objects to assign the attribute to.");
+                return;
+            }
+
+            string formattedKey = $"{CustomAttributePrefix}{key}";
+            int updatedCount = 0;
+
+            foreach (var rhinoObject in selectedObjects)
+            {
+                var newAttributes = rhinoObject.Attributes.Duplicate();
+                var keysToRemove = newAttributes.GetUserStrings().AllKeys
+                                     .Where(k => k.StartsWith(CustomAttributePrefix))
+                                     .ToList();
+                foreach (var keyToRemove in keysToRemove)
+                {
+                    newAttributes.DeleteUserString(keyToRemove);
+                }
+
+                if (newAttributes.SetUserString(formattedKey, value) && doc.Objects.ModifyAttributes(rhinoObject.Id, newAttributes, false))
+                {
+                    updatedCount++;
+                }
+            }
+            if (updatedCount > 0)
+            {
+                RhinoApp.WriteLine($"Successfully assigned custom attribute to {updatedCount} object(s).");
+                doc.Views.Redraw();
             }
         }
-
-        private void OnDocumentChanged(object sender, EventArgs e)
+        private void OnRemoveCustomAttributeClick(object sender, EventArgs e)
         {
-            _quantityMultipliers.Clear();
-            _needsRefresh = true;
-            if (_notesTextArea != null)
-            {
-                _notesTextArea.Text = RhinoDoc.ActiveDoc?.Notes ?? string.Empty;
-            }
-            ReloadIfcClassList();
-            ReloadMaterialList();
-        }
+            var doc = RhinoDoc.ActiveDoc;
+            if (doc == null) return;
 
+            var selectedObjects = doc.Objects.GetSelectedObjects(false, false).ToList();
+            if (!selectedObjects.Any())
+            {
+                RhinoApp.WriteLine("Please select one or more objects to remove the custom attribute from.");
+                return;
+            }
+
+            int updatedCount = 0;
+            foreach (var rhinoObject in selectedObjects)
+            {
+                bool objectModified = false;
+                var newAttributes = rhinoObject.Attributes.Duplicate();
+                var keysToRemove = newAttributes.GetUserStrings().AllKeys
+                                     .Where(k => k.StartsWith(CustomAttributePrefix))
+                                     .ToList();
+
+                if (keysToRemove.Any())
+                {
+                    foreach (var keyToRemove in keysToRemove)
+                    {
+                        newAttributes.DeleteUserString(keyToRemove);
+                    }
+                    if (doc.Objects.ModifyAttributes(rhinoObject.Id, newAttributes, false))
+                    {
+                        objectModified = true;
+                    }
+                }
+                if (objectModified) updatedCount++;
+            }
+
+            if (updatedCount > 0)
+            {
+                RhinoApp.WriteLine($"Successfully removed custom attribute from {updatedCount} object(s).");
+                doc.Views.Redraw();
+            }
+            else
+            {
+                RhinoApp.WriteLine("Selected objects do not have a custom attribute to remove.");
+            }
+        }
+        private void OnPrimaryIfcClassChanged(object sender, EventArgs e) => UpdateSubclassDropdown();
         private void OnAggregateChanged(object sender, EventArgs e) => UpdatePanelData();
-
         private void OnGroupByClassChanged(object sender, EventArgs e)
         {
             if (_groupByClassCheckBox.Checked == true) _groupByMaterialCheckBox.Checked = false;
             UpdatePanelData();
         }
-
         private void OnGroupByMaterialChanged(object sender, EventArgs e)
         {
             if (_groupByMaterialCheckBox.Checked == true) _groupByClassCheckBox.Checked = false;
             ReorderGridColumns(_groupByMaterialCheckBox.Checked ?? false);
             UpdatePanelData();
         }
-
         private void OnSelectUnassignedClick(object sender, EventArgs e)
         {
             var doc = RhinoDoc.ActiveDoc;
@@ -518,7 +744,26 @@ namespace MyProject
         {
             if (e.Item is UserTextEntry entry && entry.ObjectIds.Any())
             {
-                _quantityMultipliers[entry.ObjectIds.First()] = entry.QuantityMultiplier;
+                var doc = RhinoDoc.ActiveDoc;
+                if (doc == null) return;
+
+                // This logic is for non-aggregated view where each grid entry corresponds to one object.
+                var objectId = entry.ObjectIds.First();
+                var rhinoObject = doc.Objects.FindId(objectId);
+                if (rhinoObject != null)
+                {
+                    var newAttributes = rhinoObject.Attributes.Duplicate();
+
+                    // Convert the multiplier to a string and save it as user text on the object.
+                    // Using InvariantCulture ensures that '.' is always the decimal separator.
+                    var multiplierValue = entry.QuantityMultiplier.ToString(CultureInfo.InvariantCulture);
+                    newAttributes.SetUserString(QuantityMultiplierKey, multiplierValue);
+
+                    // Modify the object in the document. This makes the change persistent.
+                    doc.Objects.ModifyAttributes(rhinoObject.Id, newAttributes, false);
+                }
+
+                // The UpdatePanelData call will now re-read this newly saved value and refresh the grid.
                 UpdatePanelData();
             }
         }
@@ -544,52 +789,26 @@ namespace MyProject
             }
             _isSyncingSelection = false;
         }
-
-        private void OnDocumentStateChanged(object sender, EventArgs e) => UpdatePanelDataSafe();
-
         private void OnDisplayAttributeTextCheckedChanged(object sender, EventArgs e)
         {
             UpdateAllConduits();
             RhinoDoc.ActiveDoc?.Views.Redraw();
         }
 
+        #endregion
+
+        #region Data Loading & Panel Updates
+
         private void UpdatePanelDataSafe()
         {
             if (!_isSyncingSelection) UpdatePanelData();
         }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                if (_displayIfcClassCheckBox != null)
-                {
-                    _displayIfcClassCheckBox.CheckedChanged -= OnDisplayAttributeTextCheckedChanged;
-                }
-                if (_displayMaterialCheckBox != null)
-                {
-                    _displayMaterialCheckBox.CheckedChanged -= OnDisplayAttributeTextCheckedChanged;
-                }
-                if (_ifcClassDisplayConduit != null)
-                {
-                    _ifcClassDisplayConduit.Enabled = false;
-                }
-                if (_materialDisplayConduit != null)
-                {
-                    _materialDisplayConduit.Enabled = false;
-                }
-            }
-            base.Dispose(disposing);
-        }
-        #endregion
-
-        #region Core Logic Methods
         private void UpdatePanelData() => Application.Instance.AsyncInvoke(UpdateUserTextGrid);
-
         private void UpdateUserTextGrid()
         {
             var doc = RhinoDoc.ActiveDoc;
             UpdateDocumentUserTextGrid(doc);
+            UpdateObjectUserTextGrid(doc);
 
             if (doc == null || _materialLcaData == null)
             {
@@ -612,7 +831,19 @@ namespace MyProject
             var processedObjects = objectsToProcess.Select(o =>
             {
                 TryComputeQuantity(o.Geometry, doc, out double qty, out string unit, out string qtyType);
-                _quantityMultipliers.TryGetValue(o.Id, out double multiplier);
+
+                // Read the multiplier string directly from the object's user text.
+                var multiplierString = o.Attributes.GetUserString(QuantityMultiplierKey);
+                double multiplier = 1.0; // Default to 1.0 if not set or invalid.
+                if (!string.IsNullOrEmpty(multiplierString))
+                {
+                    // Use InvariantCulture to correctly parse numbers with '.' as a decimal separator.
+                    if (double.TryParse(multiplierString, NumberStyles.Any, CultureInfo.InvariantCulture, out double parsedMultiplier) && parsedMultiplier > 0)
+                    {
+                        multiplier = parsedMultiplier;
+                    }
+                }
+
                 return new
                 {
                     RhinoObject = o,
@@ -621,7 +852,7 @@ namespace MyProject
                     Quantity = qty,
                     QuantityUnit = unit,
                     QuantityType = qtyType,
-                    QuantityMultiplier = multiplier == 0 ? 1.0 : multiplier
+                    QuantityMultiplier = multiplier // Use the value read from the object.
                 };
             }).ToList();
 
@@ -632,10 +863,14 @@ namespace MyProject
                   .GroupBy(p => new { p.Material, p.IfcClass, p.QuantityType })
                   .Select(g =>
                   {
-                      var totalQuantity = g.Sum(p => p.Quantity);
-                      var totalLca = 0.0;
+                      var totalEffectiveQuantity = g.Sum(p => p.Quantity * p.QuantityMultiplier);
+
                       _materialLcaData.TryGetValue(g.Key.Material, out MaterialData materialData);
-                      if (materialData != null && g.Key.QuantityType != "N/A") totalLca = totalQuantity * materialData.Lca;
+                      var totalLca = 0.0;
+                      if (materialData != null && g.Key.QuantityType != "N/A")
+                      {
+                          totalLca = totalEffectiveQuantity * materialData.Lca;
+                      }
 
                       return new UserTextEntry
                       {
@@ -645,7 +880,7 @@ namespace MyProject
                           ReferenceUnit = materialData?.ReferenceUnit ?? "",
                           ReferenceLca = materialData?.Lca ?? 0,
                           Count = g.Count(),
-                          Quantity = totalQuantity,
+                          Quantity = totalEffectiveQuantity, // Use the corrected total quantity
                           QuantityUnit = g.First().QuantityUnit,
                           QuantityType = g.Key.QuantityType,
                           Lca = totalLca,
@@ -690,11 +925,9 @@ namespace MyProject
             _totalLcaLabel.Text = $"Total LCA: {gridData.Sum(entry => entry.Lca).ToString("N2", CultureInfo.InvariantCulture)} kgCO2 eq";
 
             SyncGridSelectionWithRhino();
-
             UpdateAllConduits();
             doc.Views.Redraw();
         }
-
         private void UpdateAllConduits()
         {
             var doc = RhinoDoc.ActiveDoc;
@@ -722,11 +955,7 @@ namespace MyProject
                     var ifcClass = rhinoObject.Attributes.GetUserString(IfcClassKey);
                     if (!string.IsNullOrWhiteSpace(ifcClass))
                     {
-                        _ifcClassDisplayConduit.DataToDraw.Add(new ConduitDrawData
-                        {
-                            ObjectId = rhinoObject.Id,
-                            Text = ifcClass
-                        });
+                        _ifcClassDisplayConduit.DataToDraw.Add(new ConduitDrawData { ObjectId = rhinoObject.Id, Text = ifcClass });
                     }
                 }
 
@@ -735,11 +964,7 @@ namespace MyProject
                     var material = rhinoObject.Attributes.GetUserString(MaterialKey);
                     if (!string.IsNullOrWhiteSpace(material))
                     {
-                        _materialDisplayConduit.DataToDraw.Add(new ConduitDrawData
-                        {
-                            ObjectId = rhinoObject.Id,
-                            Text = material
-                        });
+                        _materialDisplayConduit.DataToDraw.Add(new ConduitDrawData { ObjectId = rhinoObject.Id, Text = material });
                     }
                 }
             }
@@ -747,44 +972,59 @@ namespace MyProject
             _ifcClassDisplayConduit.Enabled = ifcEnabled;
             _materialDisplayConduit.Enabled = materialEnabled;
         }
-
         private void ReloadIfcClassList()
         {
             var doc = RhinoDoc.ActiveDoc;
             if (doc == null) return;
-
             _ifcClasses = CsvReader.ReadIfcClassesDynamic(doc);
             PopulatePrimaryIfcDropdown();
         }
-
         private void ReloadMaterialList()
         {
             var doc = RhinoDoc.ActiveDoc;
-            // Convert list to a dictionary for fast lookups, handling potential duplicate names.
             var materialList = CsvReader.ReadMaterialLcaDataDynamic(doc);
-            _materialLcaData = materialList
-                .GroupBy(m => m.MaterialName)
-                .ToDictionary(g => g.Key, g => g.First());
-
+            _materialLcaData = materialList.GroupBy(m => m.MaterialName).ToDictionary(g => g.Key, g => g.First());
             PopulateMaterialDropdown();
             UpdatePanelData();
         }
-
+        private void ReloadCustomAttributeList()
+        {
+            CsvReader.ReadCustomAttributeListsFromResource("MyProject.Resources.Data.customAttribute.csv", out _customAttributeKeys, out _customAttributeValues);
+            PopulateCustomKeyDropdown();
+            PopulateCustomValueDropdown();
+        }
+        private void PopulateCustomKeyDropdown()
+        {
+            _customKeyDropdown.Items.Clear();
+            _customKeyDropdown.Items.Add(new ListItem { Text = "" });
+            if (_customAttributeKeys != null)
+            {
+                foreach (var key in _customAttributeKeys)
+                    _customKeyDropdown.Items.Add(new ListItem { Text = key });
+            }
+            _customKeyDropdown.SelectedIndex = 0;
+        }
+        private void PopulateCustomValueDropdown()
+        {
+            _customValueDropdown.Items.Clear();
+            _customValueDropdown.Items.Add(new ListItem { Text = "" });
+            if (_customAttributeValues != null)
+            {
+                foreach (var value in _customAttributeValues)
+                    _customValueDropdown.Items.Add(new ListItem { Text = value });
+            }
+            _customValueDropdown.SelectedIndex = 0;
+        }
         private void PopulateMaterialDropdown()
         {
             var selectedText = _materialDropdown.SelectedValue is ListItem selectedItem ? selectedItem.Text : null;
-
             _materialDropdown.Items.Clear();
             _materialDropdown.Items.Add(new ListItem { Text = "" });
             if (_materialLcaData != null)
             {
-                // Iterate through dictionary keys, which now maintain insertion order. No .OrderBy() is needed.
                 foreach (var materialName in _materialLcaData.Keys)
-                {
                     _materialDropdown.Items.Add(new ListItem { Text = materialName });
-                }
             }
-
             if (selectedText != null)
             {
                 var itemToRestore = _materialDropdown.Items.FirstOrDefault(i => i.Text == selectedText);
@@ -796,19 +1036,15 @@ namespace MyProject
                 _materialDropdown.SelectedIndex = 0;
             }
         }
-
         private void PopulatePrimaryIfcDropdown()
         {
             var selectedText = _ifcDropdown.SelectedValue is ListItem selectedItem ? selectedItem.Text : null;
-
             _ifcDropdown.Items.Clear();
             _ifcDropdown.Items.Add(new ListItem { Text = "" });
-            // Iterate through dictionary keys, which now maintain insertion order. No .OrderBy() is needed.
             foreach (var primaryClass in _ifcClasses.Keys)
             {
                 _ifcDropdown.Items.Add(new ListItem { Text = primaryClass });
             }
-
             if (selectedText != null)
             {
                 var itemToRestore = _ifcDropdown.Items.FirstOrDefault(i => i.Text == selectedText);
@@ -818,10 +1054,8 @@ namespace MyProject
             {
                 _ifcDropdown.SelectedIndex = 0;
             }
-
             UpdateSubclassDropdown();
         }
-
         private void UpdateSubclassDropdown()
         {
             _ifcSubclassDropdown.Items.Clear();
@@ -833,7 +1067,6 @@ namespace MyProject
                 if (_ifcClasses.TryGetValue(primaryClass, out List<string> subclasses) && subclasses.Any())
                 {
                     _ifcSubclassDropdown.Items.Add(new ListItem { Text = "" });
-                    // Subclasses are no longer sorted by the CsvReader.
                     foreach (var subclass in subclasses)
                     {
                         _ifcSubclassDropdown.Items.Add(new ListItem { Text = subclass });
@@ -843,7 +1076,6 @@ namespace MyProject
                 }
             }
         }
-
         private void UpdateDocumentUserTextGrid(RhinoDoc doc)
         {
             if (doc == null || _docUserTextGridView == null)
@@ -852,15 +1084,14 @@ namespace MyProject
                 return;
             }
             var docStrings = doc.Strings;
-            var keyCount = docStrings.Count;
-            if (keyCount == 0)
+            if (docStrings.Count == 0)
             {
                 _docUserTextGridView.DataStore = null;
             }
             else
             {
-                var data = new List<DocumentUserTextEntry>(keyCount);
-                for (int i = 0; i < keyCount; i++)
+                var data = new List<DocumentUserTextEntry>(docStrings.Count);
+                for (int i = 0; i < docStrings.Count; i++)
                 {
                     var key = docStrings.GetKey(i);
                     if (!string.IsNullOrEmpty(key)) data.Add(new DocumentUserTextEntry { Key = key, Value = docStrings.GetValue(key) });
@@ -869,6 +1100,85 @@ namespace MyProject
             }
         }
 
+        /// <summary>
+        /// Updates the grid that displays all user text attributes for the currently selected object(s).
+        /// </summary>
+        private void UpdateObjectUserTextGrid(RhinoDoc doc)
+        {
+            if (doc == null)
+            {
+                _objectUserTextGridView.DataStore = null;
+                return;
+            }
+
+            var selectedObjects = doc.Objects.GetSelectedObjects(false, false).ToList();
+
+            // --- MODIFICATION START: Update the header label with the selection count ---
+            int selectionCount = selectedObjects.Count;
+            string objectText = selectionCount == 1 ? "Object" : "Objects";
+            _selectedObjectAttributesHeaderLabel.Text = $"Selected Object(s) Attributes ({selectionCount} {objectText} Selected)";
+            // --- MODIFICATION END ---
+
+            if (!selectedObjects.Any())
+            {
+                _objectUserTextGridView.DataStore = null;
+                return;
+            }
+
+            // Use a dictionary to collect all unique values for each attribute key.
+            var allAttributes = new Dictionary<string, HashSet<string>>();
+
+            foreach (var obj in selectedObjects)
+            {
+                var userStrings = obj.Attributes.GetUserStrings();
+                foreach (var key in userStrings.AllKeys)
+                {
+                    if (!allAttributes.ContainsKey(key))
+                    {
+                        allAttributes[key] = new HashSet<string>();
+                    }
+                    allAttributes[key].Add(userStrings.Get(key) ?? string.Empty);
+                }
+            }
+
+            var data = new List<ObjectUserTextEntry>();
+            // Process the collected attributes to format the display value.
+            foreach (var kvp in allAttributes.OrderBy(item => item.Key))
+            {
+                string displayValue;
+                var distinctValues = kvp.Value.ToList();
+
+                if (distinctValues.Count == 1)
+                {
+                    // If all selected objects have the same value for this key, display it directly.
+                    displayValue = distinctValues[0];
+                }
+                else
+                {
+                    // If values differ, format them as a comma-separated list of quoted strings.
+                    displayValue = string.Join(", ", distinctValues.Select(v => $"\"{v}\""));
+                }
+                data.Add(new ObjectUserTextEntry { Key = kvp.Key, Value = displayValue });
+            }
+
+            _objectUserTextGridView.DataStore = data;
+        }
+
+        #endregion
+
+        #region Core Logic & Helpers
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _displayIfcClassCheckBox.CheckedChanged -= OnDisplayAttributeTextCheckedChanged;
+                _displayMaterialCheckBox.CheckedChanged -= OnDisplayAttributeTextCheckedChanged;
+                _ifcClassDisplayConduit.Enabled = false;
+                _materialDisplayConduit.Enabled = false;
+            }
+            base.Dispose(disposing);
+        }
         private List<UserTextEntry> SortAndFormatData(List<UserTextEntry> data)
         {
             IEnumerable<UserTextEntry> sortedData;
@@ -894,14 +1204,12 @@ namespace MyProject
             }
             return formattedList;
         }
-
         private string GetCurrentGroupingKey(UserTextEntry item)
         {
             if (_groupByClassCheckBox.Checked == true) return item.IfcClass;
             if (_groupByMaterialCheckBox.Checked == true) return item.Value;
             return Guid.NewGuid().ToString();
         }
-
         private void SyncGridSelectionWithRhino()
         {
             if (_isSyncingSelection) return;
@@ -922,7 +1230,6 @@ namespace MyProject
             }
             _isSyncingSelection = false;
         }
-
         private static void AssignUserString(string key, string friendlyName, ListItem selectedItem)
         {
             var value = selectedItem?.Text;
@@ -933,7 +1240,6 @@ namespace MyProject
             }
             AssignUserString(key, friendlyName, value);
         }
-
         private static void AssignUserString(string key, string friendlyName, string value)
         {
             var doc = RhinoDoc.ActiveDoc;
@@ -960,7 +1266,6 @@ namespace MyProject
                 doc.Views.Redraw();
             }
         }
-
         private static void RemoveUserString(string key, string friendlyName)
         {
             var doc = RhinoDoc.ActiveDoc;
@@ -991,7 +1296,6 @@ namespace MyProject
                 RhinoApp.WriteLine($"Selected objects do not have a '{friendlyName}' definition to remove.");
             }
         }
-
         private void ReorderGridColumns(bool groupByMaterial)
         {
             var ifcClassColumn = _userTextGridView.Columns.FirstOrDefault(c => c.HeaderText == "IfcClass");
@@ -1004,7 +1308,6 @@ namespace MyProject
                 _userTextGridView.Columns.Move(ifcIndex, materialIndex);
             }
         }
-
         private static bool TryComputeQuantity(GeometryBase geo, RhinoDoc doc, out double quantity, out string unit, out string quantityType)
         {
             quantity = 0.0;
@@ -1040,27 +1343,17 @@ namespace MyProject
             }
             return false;
         }
-
         private static bool TryGetVolume(GeometryBase geo, out double quantity)
         {
             quantity = 0.0;
             switch (geo)
             {
-                case Brep brep when brep.IsSolid:
-                    quantity = brep.GetVolume();
-                    break;
-                case Extrusion extrusion:
-                    var brepFromExtrusion = extrusion.ToBrep();
-                    if (brepFromExtrusion != null && brepFromExtrusion.IsSolid)
-                        quantity = brepFromExtrusion.GetVolume();
-                    break;
-                case Mesh mesh when mesh.IsClosed:
-                    quantity = mesh.Volume();
-                    break;
+                case Brep brep when brep.IsSolid: quantity = brep.GetVolume(); break;
+                case Extrusion extrusion: var brepFromExtrusion = extrusion.ToBrep(); if (brepFromExtrusion != null && brepFromExtrusion.IsSolid) quantity = brepFromExtrusion.GetVolume(); break;
+                case Mesh mesh when mesh.IsClosed: quantity = mesh.Volume(); break;
             }
             return quantity > 1e-9;
         }
-
         private static bool TryGetArea(GeometryBase geo, out double quantity)
         {
             quantity = 0.0;
@@ -1075,13 +1368,145 @@ namespace MyProject
             if (amp != null) quantity = amp.Area;
             return quantity > 1e-9;
         }
-
         private static bool TryGetLength(GeometryBase geo, out double quantity)
         {
             quantity = 0.0;
             if (geo is Curve curve) quantity = curve.GetLength();
             return quantity > 1e-9;
         }
+        private static Bitmap BytesToEtoBitmap(byte[] bytes, Size? desiredSize = null)
+        {
+            try
+            {
+                if (bytes == null || bytes.Length == 0) return null;
+                using (var ms = new MemoryStream(bytes))
+                {
+                    var originalBitmap = new Bitmap(ms);
+                    if (desiredSize.HasValue)
+                    {
+                        return new Bitmap(originalBitmap, desiredSize.Value.Width, desiredSize.Value.Height, ImageInterpolation.High);
+                    }
+                    return originalBitmap;
+                }
+            }
+            catch (Exception ex)
+            {
+                RhinoApp.WriteLine($"Error creating bitmap from resource bytes: {ex.Message}");
+                return null;
+            }
+        }
+
+        #endregion
+
+        #region Inner Classes
+
+        private class UserTextEntry
+        {
+            public string SerialNumber { get; set; }
+            public string IfcClass { get; set; }
+            public string Value { get; set; }
+            public double ReferenceQuantity { get; set; }
+            public string ReferenceUnit { get; set; }
+            public double ReferenceLca { get; set; }
+            public string DisplayReference => !string.IsNullOrWhiteSpace(ReferenceUnit) ? $"{ReferenceQuantity:0.00} {ReferenceUnit}" : "N/A";
+            public int Count { get; set; }
+            public double Quantity { get; set; }
+            public string QuantityUnit { get; set; }
+            public string DisplayQuantity => !string.IsNullOrWhiteSpace(QuantityUnit) ? $"{Quantity:0.00} {QuantityUnit}" : "N/A";
+            public string QuantityType { get; set; }
+            public double QuantityMultiplier { get; set; } = 1.0;
+            public double QuantityTotal => Quantity * QuantityMultiplier;
+            public double Lca { get; set; }
+            public List<Guid> ObjectIds { get; set; } = new List<Guid>();
+        }
+        private class DocumentUserTextEntry
+        {
+            public string Key { get; set; }
+            public string Value { get; set; }
+        }
+        private class ObjectUserTextEntry
+        {
+            public string Key { get; set; }
+            public string Value { get; set; }
+        }
+        private class ConduitDrawData
+        {
+            public Guid ObjectId { get; set; }
+            public string Text { get; set; }
+        }
+        private class AttributeDisplayConduit : DisplayConduit
+        {
+            public List<ConduitDrawData> DataToDraw { get; set; } = new List<ConduitDrawData>();
+            public double LeaderLengthMultiplier { get; set; } = 5.0;
+            protected override void PostDrawObjects(DrawEventArgs e)
+            {
+                if (!e.Display.Viewport.IsPerspectiveProjection) return;
+
+                e.Display.PushDepthTesting(false);
+                e.Display.PushDepthWriting(false);
+
+                var textColor = System.Drawing.Color.Black;
+                var backgroundColor = System.Drawing.Color.White;
+                const string fontFace = "Arial";
+                const int textPixelHeight = 10;
+
+                foreach (var data in DataToDraw)
+                {
+                    var rhinoObject = e.RhinoDoc.Objects.FindId(data.ObjectId);
+                    if (rhinoObject == null) continue;
+
+                    var bbox = rhinoObject.Geometry.GetBoundingBox(true);
+                    if (!bbox.IsValid) continue;
+
+                    var location = bbox.Center;
+                    var text = data.Text;
+                    var camDir = e.Display.Viewport.CameraDirection;
+                    var camUp = e.Display.Viewport.CameraUp;
+                    var screenXAxis = Vector3d.CrossProduct(camDir, camUp);
+
+                    var worldToScreen = e.Display.Viewport.GetTransform(CoordinateSystem.World, CoordinateSystem.Screen);
+                    var locationOnScreen = location;
+                    locationOnScreen.Transform(worldToScreen);
+                    var pointAboveOnScreen = new Point3d(locationOnScreen.X, locationOnScreen.Y - textPixelHeight, locationOnScreen.Z);
+
+                    var screenToWorld = e.Display.Viewport.GetTransform(CoordinateSystem.Screen, CoordinateSystem.World);
+                    pointAboveOnScreen.Transform(screenToWorld);
+                    var worldHeight = location.DistanceTo(pointAboveOnScreen);
+
+                    var leaderDirection = screenXAxis + camUp;
+                    leaderDirection.Unitize();
+
+                    var leaderLength = worldHeight * LeaderLengthMultiplier;
+                    var textLocation = location + (leaderDirection * leaderLength);
+
+                    e.Display.DrawArrow(new Line(textLocation, location), textColor);
+
+                    var tempTextEntity = new Text3d(text, Plane.WorldXY, worldHeight) { FontFace = fontFace };
+                    var tempBbox = tempTextEntity.BoundingBox;
+                    var worldWidth = tempBbox.Max.X - tempBbox.Min.X;
+
+                    var padding = worldHeight * 0.2;
+                    var backgroundWidth = worldWidth + (2 * padding);
+                    var backgroundHeight = worldHeight + (2 * padding);
+                    var backgroundOrigin = textLocation - (screenXAxis * padding) - (camUp * padding);
+
+                    var corner1 = backgroundOrigin;
+                    var corner2 = backgroundOrigin + (screenXAxis * backgroundWidth);
+                    var corner3 = backgroundOrigin + (screenXAxis * backgroundWidth) + (camUp * backgroundHeight);
+                    var corner4 = backgroundOrigin + (camUp * backgroundHeight);
+
+                    var backgroundCorners = new Point3d[] { corner1, corner2, corner3, corner4 };
+                    e.Display.DrawPolygon(backgroundCorners, backgroundColor, true);
+
+                    var textPlane = new Plane(textLocation, screenXAxis, camUp);
+                    e.Display.Draw3dText(text, textColor, textPlane, worldHeight, fontFace);
+                }
+
+                e.Display.PopDepthTesting();
+                e.Display.PopDepthWriting();
+            }
+        }
+
         #endregion
     }
 }

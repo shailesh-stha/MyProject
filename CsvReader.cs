@@ -17,6 +17,49 @@ namespace MyProject
     public static class CsvReader
     {
         /// <summary>
+        /// Reads custom attribute data, returning two independent lists of unique keys and values.
+        /// </summary>
+        public static void ReadCustomAttributeListsFromResource(string resourceName, out List<string> keys, out List<string> values)
+        {
+            var keySet = new HashSet<string>();
+            var valueSet = new HashSet<string>();
+            var assembly = Assembly.GetExecutingAssembly();
+
+            using (Stream stream = assembly.GetManifestResourceStream(resourceName))
+            {
+                if (stream == null)
+                {
+                    RhinoApp.WriteLine($"Error: Embedded resource '{resourceName}' not found.");
+                    keys = new List<string>();
+                    values = new List<string>();
+                    return;
+                }
+
+                using (var reader = new StreamReader(stream))
+                {
+                    reader.ReadLine(); // Skip header
+                    string line;
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        var parts = line.Split(',');
+                        if (parts.Length >= 1 && !string.IsNullOrWhiteSpace(parts[0]))
+                        {
+                            keySet.Add(parts[0].Trim());
+                        }
+                        if (parts.Length >= 2 && !string.IsNullOrWhiteSpace(parts[1]))
+                        {
+                            valueSet.Add(parts[1].Trim());
+                        }
+                    }
+                }
+            }
+            keys = keySet.ToList();
+            values = valueSet.ToList();
+        }
+
+        // ... (other methods remain unchanged) ...
+
+        /// <summary>
         /// Reads material LCA data from an embedded CSV resource file. Returns a list to preserve order.
         /// </summary>
         public static List<MaterialData> ReadMaterialLcaDataFromResource(string resourceName)
@@ -167,12 +210,8 @@ namespace MyProject
             throw new FileNotFoundException($"The specified resource could not be found as a web URL or local file path.", url);
         }
 
-        /// <summary>
-        /// Parses CSV content into a dictionary. Using LinkedDictionary to preserve insertion order for primary classes.
-        /// </summary>
         private static Dictionary<string, List<string>> ParseIfcCsvContent(string csvContent)
         {
-            // Using a regular Dictionary as it preserves insertion order in modern .NET runtimes used by Rhino.
             var ifcClasses = new Dictionary<string, List<string>>();
             using (var reader = new StringReader(csvContent))
             {
@@ -200,9 +239,6 @@ namespace MyProject
             return ifcClasses;
         }
 
-        /// <summary>
-        /// Reads IFC classes and subclasses from an embedded resource, preserving order.
-        /// </summary>
         public static Dictionary<string, List<string>> ReadIfcClassesFromResource(string resourceName)
         {
             var assembly = Assembly.GetExecutingAssembly();

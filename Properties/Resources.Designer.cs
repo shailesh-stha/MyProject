@@ -63,6 +63,16 @@ namespace MyProject.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
+        internal static byte[] btn_assignCustom256 {
+            get {
+                object obj = ResourceManager.GetObject("btn_assignCustom256", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
         internal static byte[] btn_assignIfcClass256 {
             get {
                 object obj = ResourceManager.GetObject("btn_assignIfcClass256", resourceCulture);
@@ -93,6 +103,26 @@ namespace MyProject.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
+        internal static byte[] btn_refreshList256 {
+            get {
+                object obj = ResourceManager.GetObject("btn_refreshList256", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] btn_removeCustom256 {
+            get {
+                object obj = ResourceManager.GetObject("btn_removeCustom256", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
         internal static byte[] btn_removeIfcClass256 {
             get {
                 object obj = ResourceManager.GetObject("btn_removeIfcClass256", resourceCulture);
@@ -113,9 +143,49 @@ namespace MyProject.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
+        internal static byte[] btn_selectObjects256 {
+            get {
+                object obj = ResourceManager.GetObject("btn_selectObjects256", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] btn_selectUnassigned256 {
+            get {
+                object obj = ResourceManager.GetObject("btn_selectUnassigned256", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
         internal static byte[] btn_strLCA256 {
             get {
                 object obj = ResourceManager.GetObject("btn_strLCA256", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] btn_strLogo256 {
+            get {
+                object obj = ResourceManager.GetObject("btn_strLogo256", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] customAttribute {
+            get {
+                object obj = ResourceManager.GetObject("customAttribute", resourceCulture);
                 return ((byte[])(obj));
             }
         }
