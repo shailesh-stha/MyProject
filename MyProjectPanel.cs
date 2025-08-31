@@ -53,11 +53,11 @@ namespace MyProject
         private readonly ComboBox _materialDropdown = new ComboBox { Width = 90, AutoComplete = true };
         private ComboBox _customKeyDropdown;
         private ComboBox _customValueDropdown;
-        private readonly CheckBox _showAllObjectsCheckBox = new CheckBox { Text = "Show All/Selected", Checked = true };
-        private readonly CheckBox _showUnassignedCheckBox = new CheckBox { Text = "Show/Hide Unassigned", Checked = true };
-        private readonly CheckBox _groupByMaterialCheckBox = new CheckBox { Text = "Group by Material", Checked = false };
-        private readonly CheckBox _groupByClassCheckBox = new CheckBox { Text = "Group by Class", Checked = true };
-        private readonly CheckBox _aggregateCheckBox = new CheckBox { Text = "Aggregate", Checked = false };
+        private readonly CheckBox _showAllObjectsCheckBox = new CheckBox { Text = "Show All/Selected" };
+        private readonly CheckBox _showUnassignedCheckBox = new CheckBox { Text = "Show/Hide Unassigned" };
+        private readonly CheckBox _groupByMaterialCheckBox = new CheckBox { Text = "Group by Material" };
+        private readonly CheckBox _groupByClassCheckBox = new CheckBox { Text = "Group by Class" };
+        private readonly CheckBox _aggregateCheckBox = new CheckBox { Text = "Aggregate" };
         private CheckBox _displayIfcClassCheckBox;
         private CheckBox _displayMaterialCheckBox;
         private CheckBox _assignDefOnCreateCheckBox;
@@ -84,11 +84,25 @@ namespace MyProject
 
         public MyProjectPanel()
         {
-            _ifcClassDisplayConduit = new AttributeDisplayConduit { LeaderLength = 5, LeaderAngle = 45 };
-            _materialDisplayConduit = new AttributeDisplayConduit { LeaderLength = 8, LeaderAngle = 45 };
+            // --- MODIFICATION START: Initialize conduits with saved or default values ---
+            _ifcClassDisplayConduit = new AttributeDisplayConduit
+            {
+                LeaderLength = int.Parse(PluginSettingsManager.GetString(SettingKeys.IfcLeaderLength, "5")),
+                LeaderAngle = int.Parse(PluginSettingsManager.GetString(SettingKeys.IfcLeaderAngle, "45"))
+            };
+            _materialDisplayConduit = new AttributeDisplayConduit
+            {
+                LeaderLength = int.Parse(PluginSettingsManager.GetString(SettingKeys.MaterialLeaderLength, "8")),
+                LeaderAngle = int.Parse(PluginSettingsManager.GetString(SettingKeys.MaterialLeaderAngle, "45"))
+            };
+            // --- MODIFICATION END ---
 
             InitializeLayout();
             RegisterEventHandlers();
+
+            // --- MODIFICATION START: Load settings after UI is initialized ---
+            LoadSettings();
+            // --- MODIFICATION END ---
 
             ReloadIfcClassList();
             ReloadMaterialList();
@@ -235,7 +249,13 @@ namespace MyProject
             _qtyMultiplierColumn.Visible = !_aggregateCheckBox.Checked ?? true;
 
             var columnsViewButton = new Button { Image = BytesToEtoBitmap(Resources.btn_columnsView256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
-            columnsViewButton.Click += (s, e) => new ColumnVisibilityDialog(_userTextGridView).ShowModal(this);
+            // --- MODIFICATION START: Save column settings after the dialog is closed ---
+            columnsViewButton.Click += (s, e) =>
+            {
+                new ColumnVisibilityDialog(_userTextGridView).ShowModal(this);
+                PluginSettingsManager.SaveColumnVisibility(_userTextGridView.Columns);
+            };
+            // --- MODIFICATION END ---
             var selectUnassignedButton = new Button { Image = BytesToEtoBitmap(Resources.btn_selectUnassigned256, new Size(18, 18)), ToolTip = "Select objects with no material assigned.", MinimumSize = Size.Empty };
             selectUnassignedButton.Click += OnSelectUnassignedClick;
 
@@ -265,13 +285,13 @@ namespace MyProject
 
         private Control CreateDisplayOptionsLayout()
         {
-            _displayIfcClassCheckBox = new CheckBox { Text = "Display IFC Class", Checked = false };
+            _displayIfcClassCheckBox = new CheckBox { Text = "Display IFC Class" };
             _ifcLeaderLengthTextBox = new TextBox { Text = _ifcClassDisplayConduit.LeaderLength.ToString(), Width = 40 };
             _ifcLeaderAngleTextBox = new TextBox { Text = _ifcClassDisplayConduit.LeaderAngle.ToString(), Width = 40 };
             var applyIfcButton = new Button { Text = "Apply" };
             applyIfcButton.Click += OnApplyIfcDisplaySettingsClick;
 
-            _displayMaterialCheckBox = new CheckBox { Text = "Display Material", Checked = false };
+            _displayMaterialCheckBox = new CheckBox { Text = "Display Material" };
             _materialLeaderLengthTextBox = new TextBox { Text = _materialDisplayConduit.LeaderLength.ToString(), Width = 40 };
             _materialLeaderAngleTextBox = new TextBox { Text = _materialDisplayConduit.LeaderAngle.ToString(), Width = 40 };
             var applyMaterialButton = new Button { Text = "Apply" };
@@ -332,17 +352,48 @@ namespace MyProject
             RhinoApp.Idle += OnRhinoIdle;
 
             _ifcDropdown.SelectedValueChanged += OnPrimaryIfcClassChanged;
-            _showAllObjectsCheckBox.CheckedChanged += (s, e) => UpdatePanelData();
-            _showUnassignedCheckBox.CheckedChanged += (s, e) => UpdatePanelData();
-            _aggregateCheckBox.CheckedChanged += OnAggregateChanged;
-            _groupByMaterialCheckBox.CheckedChanged += OnGroupByMaterialChanged;
-            _groupByClassCheckBox.CheckedChanged += OnGroupByClassChanged;
+
+            // --- MODIFICATION START: Add setting-saving logic to event handlers ---
+            _showAllObjectsCheckBox.CheckedChanged += (s, e) => {
+                PluginSettingsManager.SetBool(SettingKeys.ShowAllObjects, _showAllObjectsCheckBox.Checked ?? false);
+                UpdatePanelData();
+            };
+            _showUnassignedCheckBox.CheckedChanged += (s, e) => {
+                PluginSettingsManager.SetBool(SettingKeys.ShowUnassigned, _showUnassignedCheckBox.Checked ?? false);
+                UpdatePanelData();
+            };
+            _aggregateCheckBox.CheckedChanged += (s, e) => {
+                PluginSettingsManager.SetBool(SettingKeys.AggregateResults, _aggregateCheckBox.Checked ?? false);
+                OnAggregateChanged(s, e);
+            };
+            _groupByMaterialCheckBox.CheckedChanged += (s, e) => {
+                PluginSettingsManager.SetBool(SettingKeys.GroupByMaterial, _groupByMaterialCheckBox.Checked ?? false);
+                OnGroupByMaterialChanged(s, e);
+            };
+            _groupByClassCheckBox.CheckedChanged += (s, e) => {
+                PluginSettingsManager.SetBool(SettingKeys.GroupByClass, _groupByClassCheckBox.Checked ?? false);
+                OnGroupByClassChanged(s, e);
+            };
+            _displayIfcClassCheckBox.CheckedChanged += (s, e) => {
+                PluginSettingsManager.SetBool(SettingKeys.DisplayIfcClass, _displayIfcClassCheckBox.Checked ?? false);
+                OnDisplayAttributeTextCheckedChanged(s, e);
+            };
+            _displayMaterialCheckBox.CheckedChanged += (s, e) => {
+                PluginSettingsManager.SetBool(SettingKeys.DisplayMaterial, _displayMaterialCheckBox.Checked ?? false);
+                OnDisplayAttributeTextCheckedChanged(s, e);
+            };
+            _assignDefOnCreateCheckBox.CheckedChanged += (s, e) => {
+                PluginSettingsManager.SetBool(SettingKeys.AssignDefOnCreate, _assignDefOnCreateCheckBox.Checked ?? false);
+            };
+            _assignCustomOnCreateCheckBox.CheckedChanged += (s, e) => {
+                PluginSettingsManager.SetBool(SettingKeys.AssignCustomOnCreate, _assignCustomOnCreateCheckBox.Checked ?? false);
+            };
+            // --- MODIFICATION END ---
+
             _userTextGridView.SelectionChanged += OnGridSelectionChanged;
             _userTextGridView.CellEdited += OnGridCellEdited;
             _userTextGridView.MouseEnter += (s, e) => _isMouseOverGrid = true;
             _userTextGridView.MouseLeave += (s, e) => _isMouseOverGrid = false;
-            _displayIfcClassCheckBox.CheckedChanged += OnDisplayAttributeTextCheckedChanged;
-            _displayMaterialCheckBox.CheckedChanged += OnDisplayAttributeTextCheckedChanged;
         }
 
         private void OnDocumentStateChanged(object sender, EventArgs e) => UpdatePanelDataSafe();
@@ -782,6 +833,10 @@ namespace MyProject
         {
             if (ValidateAndApplyConduitSettings(_ifcLeaderLengthTextBox, _ifcLeaderAngleTextBox, _ifcClassDisplayConduit))
             {
+                // --- MODIFICATION START: Save settings on successful apply ---
+                PluginSettingsManager.SetString(SettingKeys.IfcLeaderLength, _ifcLeaderLengthTextBox.Text);
+                PluginSettingsManager.SetString(SettingKeys.IfcLeaderAngle, _ifcLeaderAngleTextBox.Text);
+                // --- MODIFICATION END ---
                 RhinoDoc.ActiveDoc?.Views.Redraw();
             }
         }
@@ -790,6 +845,10 @@ namespace MyProject
         {
             if (ValidateAndApplyConduitSettings(_materialLeaderLengthTextBox, _materialLeaderAngleTextBox, _materialDisplayConduit))
             {
+                // --- MODIFICATION START: Save settings on successful apply ---
+                PluginSettingsManager.SetString(SettingKeys.MaterialLeaderLength, _materialLeaderLengthTextBox.Text);
+                PluginSettingsManager.SetString(SettingKeys.MaterialLeaderAngle, _materialLeaderAngleTextBox.Text);
+                // --- MODIFICATION END ---
                 RhinoDoc.ActiveDoc?.Views.Redraw();
             }
         }
@@ -797,6 +856,34 @@ namespace MyProject
         #endregion
 
         #region Data Loading & Panel Updates
+
+        // --- NEW METHOD START ---
+        /// <summary>
+        /// Loads all panel settings from the persistent settings store and applies them to the UI controls.
+        /// </summary>
+        private void LoadSettings()
+        {
+            // Load checkbox states
+            _showAllObjectsCheckBox.Checked = PluginSettingsManager.GetBool(SettingKeys.ShowAllObjects, true);
+            _showUnassignedCheckBox.Checked = PluginSettingsManager.GetBool(SettingKeys.ShowUnassigned, true);
+            _groupByMaterialCheckBox.Checked = PluginSettingsManager.GetBool(SettingKeys.GroupByMaterial, false);
+            _groupByClassCheckBox.Checked = PluginSettingsManager.GetBool(SettingKeys.GroupByClass, true);
+            _aggregateCheckBox.Checked = PluginSettingsManager.GetBool(SettingKeys.AggregateResults, false);
+            _displayIfcClassCheckBox.Checked = PluginSettingsManager.GetBool(SettingKeys.DisplayIfcClass, false);
+            _displayMaterialCheckBox.Checked = PluginSettingsManager.GetBool(SettingKeys.DisplayMaterial, false);
+            _assignDefOnCreateCheckBox.Checked = PluginSettingsManager.GetBool(SettingKeys.AssignDefOnCreate, false);
+            _assignCustomOnCreateCheckBox.Checked = PluginSettingsManager.GetBool(SettingKeys.AssignCustomOnCreate, false);
+
+            // Load leader settings from conduit properties which were initialized with saved values
+            _ifcLeaderLengthTextBox.Text = _ifcClassDisplayConduit.LeaderLength.ToString();
+            _ifcLeaderAngleTextBox.Text = _ifcClassDisplayConduit.LeaderAngle.ToString();
+            _materialLeaderLengthTextBox.Text = _materialDisplayConduit.LeaderLength.ToString();
+            _materialLeaderAngleTextBox.Text = _materialDisplayConduit.LeaderAngle.ToString();
+
+            // Load grid column visibility
+            PluginSettingsManager.LoadColumnVisibility(_userTextGridView.Columns);
+        }
+        // --- NEW METHOD END ---
 
         private void UpdatePanelDataSafe()
         {
@@ -1183,8 +1270,7 @@ namespace MyProject
         {
             if (disposing)
             {
-                _displayIfcClassCheckBox.CheckedChanged -= OnDisplayAttributeTextCheckedChanged;
-                _displayMaterialCheckBox.CheckedChanged -= OnDisplayAttributeTextCheckedChanged;
+                // No need to unregister event handlers for settings as they are tied to the control's lifetime.
                 _ifcClassDisplayConduit.Enabled = false;
                 _materialDisplayConduit.Enabled = false;
             }
@@ -1455,10 +1541,8 @@ namespace MyProject
             {
                 if (!e.Display.Viewport.IsPerspectiveProjection) return;
 
-                // --- MODIFICATION START: Revert to drawing leaders on top of all geometry ---
                 e.Display.PushDepthTesting(false);
                 e.Display.PushDepthWriting(false);
-                // --- MODIFICATION END ---
 
                 var textColor = System.Drawing.Color.Black;
                 var backgroundColor = System.Drawing.Color.White;
@@ -1519,10 +1603,8 @@ namespace MyProject
                     e.Display.Draw3dText(text, textColor, textPlane, worldHeight, fontFace);
                 }
 
-                // --- MODIFICATION START: Pop the depth testing and writing states ---
                 e.Display.PopDepthTesting();
                 e.Display.PopDepthWriting();
-                // --- MODIFICATION END ---
             }
         }
 
