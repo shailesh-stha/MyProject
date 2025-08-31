@@ -47,9 +47,7 @@ namespace MyProject
         private readonly GridView<ObjectUserTextEntry> _objectUserTextGridView = new GridView<ObjectUserTextEntry> { ShowHeader = true, Height = 150, Width = 450 };
         private readonly GridColumn _qtyMultiplierColumn = new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.QuantityMultiplier)) { TextAlignment = TextAlignment.Right }, HeaderText = "Qty. Multiplier", Editable = true, Width = 90 };
         private readonly Label _totalLcaLabel = new Label { Text = "Total LCA: 0.00" };
-        // --- MODIFICATION START: Added a field for the header label to allow dynamic updates ---
         private Label _selectedObjectAttributesHeaderLabel;
-        // --- MODIFICATION END ---
         private readonly ComboBox _ifcDropdown = new ComboBox { Width = 90, AutoComplete = true };
         private readonly ComboBox _ifcSubclassDropdown = new ComboBox { Width = 90, AutoComplete = true };
         private readonly ComboBox _materialDropdown = new ComboBox { Width = 90, AutoComplete = true };
@@ -65,6 +63,11 @@ namespace MyProject
         private CheckBox _assignDefOnCreateCheckBox;
         private CheckBox _assignCustomOnCreateCheckBox;
 
+        private TextBox _ifcLeaderLengthTextBox;
+        private TextBox _ifcLeaderAngleTextBox;
+        private TextBox _materialLeaderLengthTextBox;
+        private TextBox _materialLeaderAngleTextBox;
+
         // Conduits
         private readonly AttributeDisplayConduit _ifcClassDisplayConduit;
         private readonly AttributeDisplayConduit _materialDisplayConduit;
@@ -78,18 +81,15 @@ namespace MyProject
         #endregion
 
         #region Constructor
-        /// <summary>
-        /// Initializes a new instance of the MyProjectPanel class.
-        /// </summary>
+
         public MyProjectPanel()
         {
-            _ifcClassDisplayConduit = new AttributeDisplayConduit { LeaderLengthMultiplier = 5.0 };
-            _materialDisplayConduit = new AttributeDisplayConduit { LeaderLengthMultiplier = 8.0 };
+            _ifcClassDisplayConduit = new AttributeDisplayConduit { LeaderLength = 5, LeaderAngle = 45 };
+            _materialDisplayConduit = new AttributeDisplayConduit { LeaderLength = 8, LeaderAngle = 45 };
 
             InitializeLayout();
             RegisterEventHandlers();
 
-            // Load initial data
             ReloadIfcClassList();
             ReloadMaterialList();
             ReloadCustomAttributeList();
@@ -99,9 +99,7 @@ namespace MyProject
 
         #region UI Initialization
 
-        /// <summary>
-        /// Sets up the overall layout and content of the panel.
-        /// </summary>
+
         private void InitializeLayout()
         {
             Styles.Add<Label>("bold_label", label =>
@@ -112,28 +110,22 @@ namespace MyProject
 
             var mainLayout = new DynamicLayout { Spacing = new Size(6, 6), Padding = new Padding(10) };
 
-            // --- MODIFICATION START: Initialize the header label field ---
             _selectedObjectAttributesHeaderLabel = new Label { Text = "Selected Object(s) Attributes", Style = "bold_label" };
-            // --- MODIFICATION END ---
 
             mainLayout.Add(new Expander { Header = new Label { Text = "Utility Buttons", Style = "bold_label" }, Content = CreateUtilityButtonsLayout(), Expanded = true });
             mainLayout.Add(new Expander { Header = new Label { Text = "Definition", Style = "bold_label" }, Content = CreateDefinitionLayout(), Expanded = true });
             mainLayout.Add(new Expander { Header = new Label { Text = "Custom Definition", Style = "bold_label" }, Content = CreateCustomDefinitionLayout(), Expanded = true });
             mainLayout.Add(new Expander { Header = new Label { Text = "Attribute User Text", Style = "bold_label" }, Content = CreateAttributeGridLayout(), Expanded = true });
-            // --- MODIFICATION START: Use the new field for the expander's header ---
             mainLayout.Add(new Expander { Header = _selectedObjectAttributesHeaderLabel, Content = CreateObjectUserTextLayout(), Expanded = true });
-            // --- MODIFICATION END ---
             mainLayout.Add(new Expander { Header = new Label { Text = "Viewport Display", Style = "bold_label" }, Content = CreateDisplayOptionsLayout(), Expanded = true });
             mainLayout.Add(new Expander { Header = new Label { Text = "Document User Text", Style = "bold_label" }, Content = CreateDocumentUserTextLayout(), Expanded = false });
-            mainLayout.Add(null, true); // Stretchy space to push content up
+            mainLayout.Add(null, true);
 
             Content = new Scrollable { Content = mainLayout, Border = BorderType.None };
             MinimumSize = new Size(400, 450);
         }
 
-        /// <summary>
-        /// Creates the layout for utility buttons like 'Export CSV'.
-        /// </summary>
+
         private Control CreateUtilityButtonsLayout()
         {
             var structureIcon = BytesToEtoBitmap(Resources.btn_strLogo256, new Size(18, 18));
@@ -145,7 +137,7 @@ namespace MyProject
                 catch (Exception ex) { RhinoApp.WriteLine($"Error opening website: {ex.Message}"); }
             };
 
-            var exportButton = new Button { Text = "Export CSV", ToolTip = "Export the grid data to a CSV file." };
+            var exportButton = new Button { Text = "Export LCA Calculation", ToolTip = "Export the grid data to a CSV file." };
             exportButton.Click += OnExportToCsvClick;
 
             var buttonLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { btnStructure, exportButton } };
@@ -154,18 +146,14 @@ namespace MyProject
             return layout;
         }
 
-        /// <summary>
-        /// Creates the layout for defining IFC Class and Material attributes.
-        /// </summary>
+
         private Control CreateDefinitionLayout()
         {
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
 
-            // Load icons for this section
             var selectIcon = BytesToEtoBitmap(Resources.btn_selectObjects256, new Size(18, 18));
             var refreshIcon = BytesToEtoBitmap(Resources.btn_refreshList256, new Size(18, 18));
 
-            // IFC Class controls
             var selectIfcButton = new Button { Image = selectIcon, ToolTip = "Select objects matching the specified IfcClass.", MinimumSize = Size.Empty };
             selectIfcButton.Click += OnSelectByIfcClassClick;
             var assignIfcButton = new Button { Image = BytesToEtoBitmap(Resources.btn_assignIfcClass256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
@@ -179,7 +167,6 @@ namespace MyProject
             var ifcButtonsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { assignIfcButton, removeIfcButton, selectIfcButton, refreshIfcButton } };
             layout.AddRow(new Label { Text = "IfcClass:", ToolTip = IfcClassKey }, ifcClassLayout, ifcButtonsLayout);
 
-            // Material controls
             var selectMaterialButton = new Button { Image = selectIcon, ToolTip = "Select objects matching the specified Material.", MinimumSize = Size.Empty };
             selectMaterialButton.Click += OnSelectByMaterialClick;
             var assignMaterialButton = new Button { Image = BytesToEtoBitmap(Resources.btn_assignMaterial256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
@@ -192,16 +179,13 @@ namespace MyProject
             var materialButtonsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { assignMaterialButton, removeMaterialButton, selectMaterialButton, refreshMaterialButton } };
             layout.AddRow(new Label { Text = "Material:", ToolTip = MaterialKey }, _materialDropdown, materialButtonsLayout);
 
-            // Assign on Creation checkbox
             _assignDefOnCreateCheckBox = new CheckBox { Text = "Assign On Creation", ToolTip = "If checked, automatically assigns the selected IfcClass and Material to newly created objects." };
             layout.AddRow(null, _assignDefOnCreateCheckBox);
 
             return layout;
         }
 
-        /// <summary>
-        /// Creates the layout for defining custom attributes.
-        /// </summary>
+
         private Control CreateCustomDefinitionLayout()
         {
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
@@ -209,11 +193,9 @@ namespace MyProject
             _customKeyDropdown = new ComboBox { Width = 90, AutoComplete = true };
             _customValueDropdown = new ComboBox { Width = 90, AutoComplete = true };
 
-            // Load icons
             var selectIcon = BytesToEtoBitmap(Resources.btn_selectObjects256, new Size(18, 18));
             var refreshIcon = BytesToEtoBitmap(Resources.btn_refreshList256, new Size(18, 18));
 
-            // Custom attribute controls
             var selectCustomButton = new Button { Image = selectIcon, ToolTip = "Select objects matching the specified custom key and/or value.", MinimumSize = Size.Empty };
             selectCustomButton.Click += OnSelectByCustomAttributeClick;
             var assignButton = new Button { Image = BytesToEtoBitmap(Resources.btn_assignCustom256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
@@ -227,19 +209,15 @@ namespace MyProject
             var buttonsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { assignButton, removeButton, selectCustomButton } };
             layout.AddRow(new Label { Text = "Custom:", ToolTip = "Assigns a single, replaceable custom attribute." }, dropdownLayout, buttonsLayout, refreshCustomButton);
 
-            // Assign on Creation checkbox
             _assignCustomOnCreateCheckBox = new CheckBox { Text = "Assign On Creation", ToolTip = "If checked, automatically assigns the selected custom attribute to newly created objects." };
             layout.AddRow(null, _assignCustomOnCreateCheckBox);
 
             return layout;
         }
 
-        /// <summary>
-        /// Creates the layout for the main attribute grid view and its associated controls.
-        /// </summary>
+
         private Control CreateAttributeGridLayout()
         {
-            // Initialize GridView columns if they don't exist
             if (_userTextGridView.Columns.Count == 0)
             {
                 _userTextGridView.Columns.Add(new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.SerialNumber)), HeaderText = "SN", Editable = false, Width = 30 });
@@ -256,7 +234,6 @@ namespace MyProject
 
             _qtyMultiplierColumn.Visible = !_aggregateCheckBox.Checked ?? true;
 
-            // View and grouping controls
             var columnsViewButton = new Button { Image = BytesToEtoBitmap(Resources.btn_columnsView256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
             columnsViewButton.Click += (s, e) => new ColumnVisibilityDialog(_userTextGridView).ShowModal(this);
             var selectUnassignedButton = new Button { Image = BytesToEtoBitmap(Resources.btn_selectUnassigned256, new Size(18, 18)), ToolTip = "Select objects with no material assigned.", MinimumSize = Size.Empty };
@@ -273,9 +250,7 @@ namespace MyProject
             return layout;
         }
 
-        /// <summary>
-        /// Creates the layout for displaying all attributes of the selected object(s).
-        /// </summary>
+
         private Control CreateObjectUserTextLayout()
         {
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
@@ -287,23 +262,42 @@ namespace MyProject
             return layout;
         }
 
-        /// <summary>
-        /// Creates the layout for viewport display options (conduits).
-        /// </summary>
+
         private Control CreateDisplayOptionsLayout()
         {
             _displayIfcClassCheckBox = new CheckBox { Text = "Display IFC Class", Checked = false };
+            _ifcLeaderLengthTextBox = new TextBox { Text = _ifcClassDisplayConduit.LeaderLength.ToString(), Width = 40 };
+            _ifcLeaderAngleTextBox = new TextBox { Text = _ifcClassDisplayConduit.LeaderAngle.ToString(), Width = 40 };
+            var applyIfcButton = new Button { Text = "Apply" };
+            applyIfcButton.Click += OnApplyIfcDisplaySettingsClick;
+
             _displayMaterialCheckBox = new CheckBox { Text = "Display Material", Checked = false };
+            _materialLeaderLengthTextBox = new TextBox { Text = _materialDisplayConduit.LeaderLength.ToString(), Width = 40 };
+            _materialLeaderAngleTextBox = new TextBox { Text = _materialDisplayConduit.LeaderAngle.ToString(), Width = 40 };
+            var applyMaterialButton = new Button { Text = "Apply" };
+            applyMaterialButton.Click += OnApplyMaterialDisplaySettingsClick;
 
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
+
             layout.AddRow(_displayIfcClassCheckBox);
+            layout.AddRow(
+                new Label { Text = "Length mult.:" }, _ifcLeaderLengthTextBox,
+                new Label { Text = "Angle:" }, _ifcLeaderAngleTextBox,
+                null,
+                applyIfcButton
+            );
             layout.AddRow(_displayMaterialCheckBox);
+            layout.AddRow(
+                new Label { Text = "Length mult.:" }, _materialLeaderLengthTextBox,
+                new Label { Text = "Angle:" }, _materialLeaderAngleTextBox,
+                null,
+                applyMaterialButton
+            );
+
             return layout;
         }
 
-        /// <summary>
-        /// Creates the layout for displaying Document User Text.
-        /// </summary>
+
         private Control CreateDocumentUserTextLayout()
         {
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
@@ -323,12 +317,9 @@ namespace MyProject
 
         #region Rhino & UI Event Handlers
 
-        /// <summary>
-        /// Registers all necessary event handlers for Rhino documents and UI controls.
-        /// </summary>
+
         private void RegisterEventHandlers()
         {
-            // Rhino Document Events
             RhinoDoc.SelectObjects += OnDocumentStateChanged;
             RhinoDoc.DeselectObjects += OnDocumentStateChanged;
             RhinoDoc.DeselectAllObjects += OnDocumentStateChanged;
@@ -340,7 +331,6 @@ namespace MyProject
             RhinoDoc.AddRhinoObject += OnObjectAdded;
             RhinoApp.Idle += OnRhinoIdle;
 
-            // UI Control Events
             _ifcDropdown.SelectedValueChanged += OnPrimaryIfcClassChanged;
             _showAllObjectsCheckBox.CheckedChanged += (s, e) => UpdatePanelData();
             _showUnassignedCheckBox.CheckedChanged += (s, e) => UpdatePanelData();
@@ -747,23 +737,16 @@ namespace MyProject
                 var doc = RhinoDoc.ActiveDoc;
                 if (doc == null) return;
 
-                // This logic is for non-aggregated view where each grid entry corresponds to one object.
                 var objectId = entry.ObjectIds.First();
                 var rhinoObject = doc.Objects.FindId(objectId);
                 if (rhinoObject != null)
                 {
                     var newAttributes = rhinoObject.Attributes.Duplicate();
-
-                    // Convert the multiplier to a string and save it as user text on the object.
-                    // Using InvariantCulture ensures that '.' is always the decimal separator.
                     var multiplierValue = entry.QuantityMultiplier.ToString(CultureInfo.InvariantCulture);
                     newAttributes.SetUserString(QuantityMultiplierKey, multiplierValue);
-
-                    // Modify the object in the document. This makes the change persistent.
                     doc.Objects.ModifyAttributes(rhinoObject.Id, newAttributes, false);
                 }
 
-                // The UpdatePanelData call will now re-read this newly saved value and refresh the grid.
                 UpdatePanelData();
             }
         }
@@ -793,6 +776,22 @@ namespace MyProject
         {
             UpdateAllConduits();
             RhinoDoc.ActiveDoc?.Views.Redraw();
+        }
+
+        private void OnApplyIfcDisplaySettingsClick(object sender, EventArgs e)
+        {
+            if (ValidateAndApplyConduitSettings(_ifcLeaderLengthTextBox, _ifcLeaderAngleTextBox, _ifcClassDisplayConduit))
+            {
+                RhinoDoc.ActiveDoc?.Views.Redraw();
+            }
+        }
+
+        private void OnApplyMaterialDisplaySettingsClick(object sender, EventArgs e)
+        {
+            if (ValidateAndApplyConduitSettings(_materialLeaderLengthTextBox, _materialLeaderAngleTextBox, _materialDisplayConduit))
+            {
+                RhinoDoc.ActiveDoc?.Views.Redraw();
+            }
         }
 
         #endregion
@@ -832,12 +831,10 @@ namespace MyProject
             {
                 TryComputeQuantity(o.Geometry, doc, out double qty, out string unit, out string qtyType);
 
-                // Read the multiplier string directly from the object's user text.
                 var multiplierString = o.Attributes.GetUserString(QuantityMultiplierKey);
-                double multiplier = 1.0; // Default to 1.0 if not set or invalid.
+                double multiplier = 1.0;
                 if (!string.IsNullOrEmpty(multiplierString))
                 {
-                    // Use InvariantCulture to correctly parse numbers with '.' as a decimal separator.
                     if (double.TryParse(multiplierString, NumberStyles.Any, CultureInfo.InvariantCulture, out double parsedMultiplier) && parsedMultiplier > 0)
                     {
                         multiplier = parsedMultiplier;
@@ -852,7 +849,7 @@ namespace MyProject
                     Quantity = qty,
                     QuantityUnit = unit,
                     QuantityType = qtyType,
-                    QuantityMultiplier = multiplier // Use the value read from the object.
+                    QuantityMultiplier = multiplier
                 };
             }).ToList();
 
@@ -880,7 +877,7 @@ namespace MyProject
                           ReferenceUnit = materialData?.ReferenceUnit ?? "",
                           ReferenceLca = materialData?.Lca ?? 0,
                           Count = g.Count(),
-                          Quantity = totalEffectiveQuantity, // Use the corrected total quantity
+                          Quantity = totalEffectiveQuantity,
                           QuantityUnit = g.First().QuantityUnit,
                           QuantityType = g.Key.QuantityType,
                           Lca = totalLca,
@@ -1100,9 +1097,6 @@ namespace MyProject
             }
         }
 
-        /// <summary>
-        /// Updates the grid that displays all user text attributes for the currently selected object(s).
-        /// </summary>
         private void UpdateObjectUserTextGrid(RhinoDoc doc)
         {
             if (doc == null)
@@ -1113,11 +1107,9 @@ namespace MyProject
 
             var selectedObjects = doc.Objects.GetSelectedObjects(false, false).ToList();
 
-            // --- MODIFICATION START: Update the header label with the selection count ---
             int selectionCount = selectedObjects.Count;
             string objectText = selectionCount == 1 ? "Object" : "Objects";
             _selectedObjectAttributesHeaderLabel.Text = $"Selected Object(s) Attributes ({selectionCount} {objectText} Selected)";
-            // --- MODIFICATION END ---
 
             if (!selectedObjects.Any())
             {
@@ -1125,7 +1117,6 @@ namespace MyProject
                 return;
             }
 
-            // Use a dictionary to collect all unique values for each attribute key.
             var allAttributes = new Dictionary<string, HashSet<string>>();
 
             foreach (var obj in selectedObjects)
@@ -1142,7 +1133,6 @@ namespace MyProject
             }
 
             var data = new List<ObjectUserTextEntry>();
-            // Process the collected attributes to format the display value.
             foreach (var kvp in allAttributes.OrderBy(item => item.Key))
             {
                 string displayValue;
@@ -1150,12 +1140,10 @@ namespace MyProject
 
                 if (distinctValues.Count == 1)
                 {
-                    // If all selected objects have the same value for this key, display it directly.
                     displayValue = distinctValues[0];
                 }
                 else
                 {
-                    // If values differ, format them as a comma-separated list of quoted strings.
                     displayValue = string.Join(", ", distinctValues.Select(v => $"\"{v}\""));
                 }
                 data.Add(new ObjectUserTextEntry { Key = kvp.Key, Value = displayValue });
@@ -1167,6 +1155,29 @@ namespace MyProject
         #endregion
 
         #region Core Logic & Helpers
+
+        private bool ValidateAndApplyConduitSettings(TextBox lengthBox, TextBox angleBox, AttributeDisplayConduit conduit)
+        {
+            bool lengthValid = int.TryParse(lengthBox.Text, out int length) && length > 0 && length <= 50;
+            if (!lengthValid)
+            {
+                RhinoApp.WriteLine("Invalid Leader Length. Please enter an integer between 1 and 50.");
+                lengthBox.Text = conduit.LeaderLength.ToString();
+                return false;
+            }
+
+            bool angleValid = int.TryParse(angleBox.Text, out int angle) && angle >= 0 && angle <= 360;
+            if (!angleValid)
+            {
+                RhinoApp.WriteLine("Invalid Leader Angle. Please enter an integer between 0 and 360.");
+                angleBox.Text = conduit.LeaderAngle.ToString();
+                return false;
+            }
+
+            conduit.LeaderLength = length;
+            conduit.LeaderAngle = angle;
+            return true;
+        }
 
         protected override void Dispose(bool disposing)
         {
@@ -1437,13 +1448,17 @@ namespace MyProject
         private class AttributeDisplayConduit : DisplayConduit
         {
             public List<ConduitDrawData> DataToDraw { get; set; } = new List<ConduitDrawData>();
-            public double LeaderLengthMultiplier { get; set; } = 5.0;
+            public int LeaderLength { get; set; } = 5;
+            public int LeaderAngle { get; set; } = 45;
+
             protected override void PostDrawObjects(DrawEventArgs e)
             {
                 if (!e.Display.Viewport.IsPerspectiveProjection) return;
 
+                // --- MODIFICATION START: Revert to drawing leaders on top of all geometry ---
                 e.Display.PushDepthTesting(false);
                 e.Display.PushDepthWriting(false);
+                // --- MODIFICATION END ---
 
                 var textColor = System.Drawing.Color.Black;
                 var backgroundColor = System.Drawing.Color.White;
@@ -1460,9 +1475,6 @@ namespace MyProject
 
                     var location = bbox.Center;
                     var text = data.Text;
-                    var camDir = e.Display.Viewport.CameraDirection;
-                    var camUp = e.Display.Viewport.CameraUp;
-                    var screenXAxis = Vector3d.CrossProduct(camDir, camUp);
 
                     var worldToScreen = e.Display.Viewport.GetTransform(CoordinateSystem.World, CoordinateSystem.Screen);
                     var locationOnScreen = location;
@@ -1473,10 +1485,15 @@ namespace MyProject
                     pointAboveOnScreen.Transform(screenToWorld);
                     var worldHeight = location.DistanceTo(pointAboveOnScreen);
 
-                    var leaderDirection = screenXAxis + camUp;
+                    var camDir = e.Display.Viewport.CameraDirection;
+                    var camUp = e.Display.Viewport.CameraUp;
+                    var screenXAxis = Vector3d.CrossProduct(camDir, camUp);
+
+                    double angleRad = LeaderAngle * Math.PI / 180.0;
+                    var leaderDirection = (screenXAxis * Math.Cos(angleRad)) + (camUp * Math.Sin(angleRad));
                     leaderDirection.Unitize();
 
-                    var leaderLength = worldHeight * LeaderLengthMultiplier;
+                    var leaderLength = worldHeight * LeaderLength;
                     var textLocation = location + (leaderDirection * leaderLength);
 
                     e.Display.DrawArrow(new Line(textLocation, location), textColor);
@@ -1502,8 +1519,10 @@ namespace MyProject
                     e.Display.Draw3dText(text, textColor, textPlane, worldHeight, fontFace);
                 }
 
+                // --- MODIFICATION START: Pop the depth testing and writing states ---
                 e.Display.PopDepthTesting();
                 e.Display.PopDepthWriting();
+                // --- MODIFICATION END ---
             }
         }
 
