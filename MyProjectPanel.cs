@@ -27,9 +27,9 @@ namespace MyProject
     public class MyProjectPanel : Panel
     {
         #region Constants
-        private const string MaterialKey = "STR_MATERIAL";
+        private const string MaterialKey = "STR_MATERIAL_PR";
         private const string IfcClassKey = "STR_IFC_CLASS";
-        private const string QuantityMultiplierKey = "STR_QTY_MULTIPLIER";
+        private const string QuantityMultiplierKey = "STR_MAT_PR_MULTIPLIER";
         private const string CustomAttributePrefix = "CUSTOM_";
         #endregion
 
@@ -46,6 +46,10 @@ namespace MyProject
         private readonly GridView<DocumentUserTextEntry> _docUserTextGridView = new GridView<DocumentUserTextEntry> { ShowHeader = true, Height = 100, Width = 450 };
         private readonly GridView<ObjectUserTextEntry> _objectUserTextGridView = new GridView<ObjectUserTextEntry> { ShowHeader = true, Height = 150, Width = 450 };
         private readonly GridColumn _qtyMultiplierColumn = new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.QuantityMultiplier)) { TextAlignment = TextAlignment.Right }, HeaderText = "Qty. Multiplier", Editable = true, Width = 90 };
+        // --- MODIFICATION START: Added fields for the object grid's columns to control their editable state ---
+        private readonly GridColumn _objectKeyColumn = new GridColumn { HeaderText = "Key", DataCell = new TextBoxCell(nameof(ObjectUserTextEntry.Key)), Editable = false, Width = 150 };
+        private readonly GridColumn _objectValueColumn = new GridColumn { HeaderText = "Value", DataCell = new TextBoxCell(nameof(ObjectUserTextEntry.Value)), Editable = false };
+        // --- MODIFICATION END ---
         private readonly Label _totalLcaLabel = new Label { Text = "Total LCA: 0.00" };
         private Label _selectedObjectAttributesHeaderLabel;
         private readonly ComboBox _ifcDropdown = new ComboBox { Width = 90, AutoComplete = true };
@@ -77,6 +81,9 @@ namespace MyProject
         private bool _isSyncingSelection = false;
         private bool _needsRefresh = false;
         private bool _isMouseOverGrid = false;
+        // --- MODIFICATION START: Added field to store the original key before an edit ---
+        private string _originalObjectKey;
+        // --- MODIFICATION END ---
 
         #endregion
 
@@ -84,7 +91,6 @@ namespace MyProject
 
         public MyProjectPanel()
         {
-            // --- MODIFICATION START: Initialize conduits with saved or default values ---
             _ifcClassDisplayConduit = new AttributeDisplayConduit
             {
                 LeaderLength = int.Parse(PluginSettingsManager.GetString(SettingKeys.IfcLeaderLength, "5")),
@@ -95,14 +101,10 @@ namespace MyProject
                 LeaderLength = int.Parse(PluginSettingsManager.GetString(SettingKeys.MaterialLeaderLength, "8")),
                 LeaderAngle = int.Parse(PluginSettingsManager.GetString(SettingKeys.MaterialLeaderAngle, "45"))
             };
-            // --- MODIFICATION END ---
 
             InitializeLayout();
             RegisterEventHandlers();
-
-            // --- MODIFICATION START: Load settings after UI is initialized ---
             LoadSettings();
-            // --- MODIFICATION END ---
 
             ReloadIfcClassList();
             ReloadMaterialList();
@@ -126,13 +128,13 @@ namespace MyProject
 
             _selectedObjectAttributesHeaderLabel = new Label { Text = "Selected Object(s) Attributes", Style = "bold_label" };
 
-            mainLayout.Add(new Expander { Header = new Label { Text = "Utility Buttons", Style = "bold_label" }, Content = CreateUtilityButtonsLayout(), Expanded = true });
-            mainLayout.Add(new Expander { Header = new Label { Text = "Definition", Style = "bold_label" }, Content = CreateDefinitionLayout(), Expanded = true });
-            mainLayout.Add(new Expander { Header = new Label { Text = "Custom Definition", Style = "bold_label" }, Content = CreateCustomDefinitionLayout(), Expanded = true });
-            mainLayout.Add(new Expander { Header = new Label { Text = "Attribute User Text", Style = "bold_label" }, Content = CreateAttributeGridLayout(), Expanded = true });
-            mainLayout.Add(new Expander { Header = _selectedObjectAttributesHeaderLabel, Content = CreateObjectUserTextLayout(), Expanded = true });
-            mainLayout.Add(new Expander { Header = new Label { Text = "Viewport Display", Style = "bold_label" }, Content = CreateDisplayOptionsLayout(), Expanded = true });
-            mainLayout.Add(new Expander { Header = new Label { Text = "Document User Text", Style = "bold_label" }, Content = CreateDocumentUserTextLayout(), Expanded = false });
+            mainLayout.Add(new Expander { Header = new Label { Text = "Utility Buttons", Style = "bold_label" }, Content = CreateUtilityButtonsLayout(), Expanded = true, Visible = true });
+            mainLayout.Add(new Expander { Header = new Label { Text = "Definition", Style = "bold_label" }, Content = CreateDefinitionLayout(), Expanded = true, Visible = true });
+            mainLayout.Add(new Expander { Header = new Label { Text = "Custom Definition", Style = "bold_label" }, Content = CreateCustomDefinitionLayout(), Expanded = true, Visible = true });
+            mainLayout.Add(new Expander { Header = new Label { Text = "Attribute User Text", Style = "bold_label" }, Content = CreateAttributeGridLayout(), Expanded = true, Visible = true });
+            mainLayout.Add(new Expander { Header = _selectedObjectAttributesHeaderLabel, Content = CreateObjectUserTextLayout(), Expanded = false, Visible = true });
+            mainLayout.Add(new Expander { Header = new Label { Text = "Viewport Display", Style = "bold_label" }, Content = CreateDisplayOptionsLayout(), Expanded = false, Visible = false });
+            mainLayout.Add(new Expander { Header = new Label { Text = "Document User Text", Style = "bold_label" }, Content = CreateDocumentUserTextLayout(), Expanded = false, Visible = false });
             mainLayout.Add(null, true);
 
             Content = new Scrollable { Content = mainLayout, Border = BorderType.None };
@@ -151,10 +153,20 @@ namespace MyProject
                 catch (Exception ex) { RhinoApp.WriteLine($"Error opening website: {ex.Message}"); }
             };
 
+            var refreshIcon = BytesToEtoBitmap(Resources.btn_refreshList256, new Size(18, 18));
+            var refreshListsButton = new Button
+            {
+                Image = refreshIcon,
+                Text = "Refresh List",
+                ImagePosition = ButtonImagePosition.Left,
+                ToolTip = "Refresh IFC Class, Material, and Custom Attribute lists from their sources."
+            };
+            refreshListsButton.Click += OnRefreshListsClick;
+
             var exportButton = new Button { Text = "Export LCA Calculation", ToolTip = "Export the grid data to a CSV file." };
             exportButton.Click += OnExportToCsvClick;
 
-            var buttonLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { btnStructure, exportButton } };
+            var buttonLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { btnStructure, refreshListsButton, exportButton } };
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
             layout.AddRow(buttonLayout);
             return layout;
@@ -166,7 +178,6 @@ namespace MyProject
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
 
             var selectIcon = BytesToEtoBitmap(Resources.btn_selectObjects256, new Size(18, 18));
-            var refreshIcon = BytesToEtoBitmap(Resources.btn_refreshList256, new Size(18, 18));
 
             var selectIfcButton = new Button { Image = selectIcon, ToolTip = "Select objects matching the specified IfcClass.", MinimumSize = Size.Empty };
             selectIfcButton.Click += OnSelectByIfcClassClick;
@@ -174,11 +185,10 @@ namespace MyProject
             assignIfcButton.Click += OnAssignIfcClassClick;
             var removeIfcButton = new Button { Image = BytesToEtoBitmap(Resources.btn_removeIfcClass256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
             removeIfcButton.Click += (s, e) => RemoveUserString(IfcClassKey, "IfcClass");
-            var refreshIfcButton = new Button { Image = refreshIcon, ToolTip = "Refresh IFC Class list from source.", MinimumSize = Size.Empty };
-            refreshIfcButton.Click += (s, e) => ReloadIfcClassList();
 
             var ifcClassLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { _ifcDropdown, _ifcSubclassDropdown } };
-            var ifcButtonsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { assignIfcButton, removeIfcButton, selectIfcButton, refreshIfcButton } };
+
+            var ifcButtonsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { assignIfcButton, removeIfcButton, selectIfcButton } };
             layout.AddRow(new Label { Text = "IfcClass:", ToolTip = IfcClassKey }, ifcClassLayout, ifcButtonsLayout);
 
             var selectMaterialButton = new Button { Image = selectIcon, ToolTip = "Select objects matching the specified Material.", MinimumSize = Size.Empty };
@@ -187,10 +197,8 @@ namespace MyProject
             assignMaterialButton.Click += (s, e) => AssignUserString(MaterialKey, "Material", _materialDropdown.SelectedValue as ListItem);
             var removeMaterialButton = new Button { Image = BytesToEtoBitmap(Resources.btn_removeMaterial256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
             removeMaterialButton.Click += (s, e) => RemoveUserString(MaterialKey, "Material");
-            var refreshMaterialButton = new Button { Image = refreshIcon, ToolTip = "Refresh Material list from source.", MinimumSize = Size.Empty };
-            refreshMaterialButton.Click += (s, e) => ReloadMaterialList();
 
-            var materialButtonsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { assignMaterialButton, removeMaterialButton, selectMaterialButton, refreshMaterialButton } };
+            var materialButtonsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { assignMaterialButton, removeMaterialButton, selectMaterialButton } };
             layout.AddRow(new Label { Text = "Material:", ToolTip = MaterialKey }, _materialDropdown, materialButtonsLayout);
 
             _assignDefOnCreateCheckBox = new CheckBox { Text = "Assign On Creation", ToolTip = "If checked, automatically assigns the selected IfcClass and Material to newly created objects." };
@@ -208,7 +216,6 @@ namespace MyProject
             _customValueDropdown = new ComboBox { Width = 90, AutoComplete = true };
 
             var selectIcon = BytesToEtoBitmap(Resources.btn_selectObjects256, new Size(18, 18));
-            var refreshIcon = BytesToEtoBitmap(Resources.btn_refreshList256, new Size(18, 18));
 
             var selectCustomButton = new Button { Image = selectIcon, ToolTip = "Select objects matching the specified custom key and/or value.", MinimumSize = Size.Empty };
             selectCustomButton.Click += OnSelectByCustomAttributeClick;
@@ -216,12 +223,11 @@ namespace MyProject
             assignButton.Click += OnAssignCustomAttributeClick;
             var removeButton = new Button { Image = BytesToEtoBitmap(Resources.btn_removeCustom256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
             removeButton.Click += OnRemoveCustomAttributeClick;
-            var refreshCustomButton = new Button { Image = refreshIcon, ToolTip = "Refresh Custom Attribute lists from source.", MinimumSize = Size.Empty };
-            refreshCustomButton.Click += (s, e) => ReloadCustomAttributeList();
 
             var dropdownLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { _customKeyDropdown, _customValueDropdown } };
             var buttonsLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { assignButton, removeButton, selectCustomButton } };
-            layout.AddRow(new Label { Text = "Custom:", ToolTip = "Assigns a single, replaceable custom attribute." }, dropdownLayout, buttonsLayout, refreshCustomButton);
+
+            layout.AddRow(new Label { Text = "Custom:", ToolTip = "Assigns a single, replaceable custom attribute." }, dropdownLayout, buttonsLayout);
 
             _assignCustomOnCreateCheckBox = new CheckBox { Text = "Assign On Creation", ToolTip = "If checked, automatically assigns the selected custom attribute to newly created objects." };
             layout.AddRow(null, _assignCustomOnCreateCheckBox);
@@ -249,13 +255,11 @@ namespace MyProject
             _qtyMultiplierColumn.Visible = !_aggregateCheckBox.Checked ?? true;
 
             var columnsViewButton = new Button { Image = BytesToEtoBitmap(Resources.btn_columnsView256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
-            // --- MODIFICATION START: Save column settings after the dialog is closed ---
             columnsViewButton.Click += (s, e) =>
             {
                 new ColumnVisibilityDialog(_userTextGridView).ShowModal(this);
                 PluginSettingsManager.SaveColumnVisibility(_userTextGridView.Columns);
             };
-            // --- MODIFICATION END ---
             var selectUnassignedButton = new Button { Image = BytesToEtoBitmap(Resources.btn_selectUnassigned256, new Size(18, 18)), ToolTip = "Select objects with no material assigned.", MinimumSize = Size.Empty };
             selectUnassignedButton.Click += OnSelectUnassignedClick;
 
@@ -275,8 +279,10 @@ namespace MyProject
         {
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
 
-            _objectUserTextGridView.Columns.Add(new GridColumn { HeaderText = "Key", DataCell = new TextBoxCell(nameof(ObjectUserTextEntry.Key)), Editable = false, Width = 150 });
-            _objectUserTextGridView.Columns.Add(new GridColumn { HeaderText = "Value", DataCell = new TextBoxCell(nameof(ObjectUserTextEntry.Value)), Editable = false });
+            // --- MODIFICATION START: Use column fields to allow dynamic editing ---
+            _objectUserTextGridView.Columns.Add(_objectKeyColumn);
+            _objectUserTextGridView.Columns.Add(_objectValueColumn);
+            // --- MODIFICATION END ---
 
             layout.AddRow(new Scrollable { Content = _objectUserTextGridView });
             return layout;
@@ -353,7 +359,6 @@ namespace MyProject
 
             _ifcDropdown.SelectedValueChanged += OnPrimaryIfcClassChanged;
 
-            // --- MODIFICATION START: Add setting-saving logic to event handlers ---
             _showAllObjectsCheckBox.CheckedChanged += (s, e) => {
                 PluginSettingsManager.SetBool(SettingKeys.ShowAllObjects, _showAllObjectsCheckBox.Checked ?? false);
                 UpdatePanelData();
@@ -388,12 +393,67 @@ namespace MyProject
             _assignCustomOnCreateCheckBox.CheckedChanged += (s, e) => {
                 PluginSettingsManager.SetBool(SettingKeys.AssignCustomOnCreate, _assignCustomOnCreateCheckBox.Checked ?? false);
             };
-            // --- MODIFICATION END ---
 
             _userTextGridView.SelectionChanged += OnGridSelectionChanged;
             _userTextGridView.CellEdited += OnGridCellEdited;
             _userTextGridView.MouseEnter += (s, e) => _isMouseOverGrid = true;
             _userTextGridView.MouseLeave += (s, e) => _isMouseOverGrid = false;
+
+            // --- MODIFICATION START: Add event handlers for the object attributes grid editing ---
+            _objectUserTextGridView.CellEditing += OnObjectGridCellEditing;
+            _objectUserTextGridView.CellEdited += OnObjectGridCellEdited;
+            // --- MODIFICATION END ---
+        }
+
+        // --- NEW METHOD START ---
+        /// <summary>
+        /// Stores the original key of an object's user text before the user begins editing it in the grid.
+        /// </summary>
+        private void OnObjectGridCellEditing(object sender, GridViewCellEventArgs e)
+        {
+            if (e.Item is ObjectUserTextEntry entry)
+            {
+                _originalObjectKey = entry.Key;
+            }
+            else
+            {
+                _originalObjectKey = null;
+            }
+        }
+        // --- NEW METHOD END ---
+
+        /// <summary>
+        /// Handles the cell edited event for the selected object's user text grid.
+        /// Saves the new key and/or value to the object's user text.
+        /// </summary>
+        private void OnObjectGridCellEdited(object sender, GridViewCellEventArgs e)
+        {
+            var doc = RhinoDoc.ActiveDoc;
+            if (doc == null || string.IsNullOrEmpty(_originalObjectKey)) return;
+
+            var selectedObjects = doc.Objects.GetSelectedObjects(false, false).ToList();
+            if (selectedObjects.Count != 1) return;
+
+            var rhinoObject = selectedObjects[0];
+            if (rhinoObject == null) return;
+
+            if (e.Item is ObjectUserTextEntry entry)
+            {
+                var newAttributes = rhinoObject.Attributes.Duplicate();
+
+                // First, delete the old entry using the stored original key
+                newAttributes.DeleteUserString(_originalObjectKey);
+
+                // Then, set the new entry. This handles both key and value changes seamlessly.
+                if (newAttributes.SetUserString(entry.Key, entry.Value))
+                {
+                    doc.Objects.ModifyAttributes(rhinoObject.Id, newAttributes, false);
+                    RhinoApp.WriteLine($"Updated user text for object {rhinoObject.Id}.");
+                }
+            }
+
+            // Clear the stored key after the operation is complete
+            _originalObjectKey = null;
         }
 
         private void OnDocumentStateChanged(object sender, EventArgs e) => UpdatePanelDataSafe();
@@ -479,6 +539,20 @@ namespace MyProject
                 _isAssigningOnCreate = false;
             }
         }
+
+        /// <summary>
+        /// Handles the click event for the unified refresh button.
+        /// Reloads all external data lists (IFC, Material, Custom).
+        /// </summary>
+        private void OnRefreshListsClick(object sender, EventArgs e)
+        {
+            RhinoApp.WriteLine("Refreshing IFC, Material, and Custom Attribute lists...");
+            ReloadIfcClassList();
+            ReloadMaterialList();
+            ReloadCustomAttributeList();
+            RhinoApp.WriteLine("Lists refreshed successfully.");
+        }
+
         private void OnExportToCsvClick(object sender, EventArgs e)
         {
             if (_userTextGridView.DataStore == null || !_userTextGridView.DataStore.Any())
@@ -833,10 +907,8 @@ namespace MyProject
         {
             if (ValidateAndApplyConduitSettings(_ifcLeaderLengthTextBox, _ifcLeaderAngleTextBox, _ifcClassDisplayConduit))
             {
-                // --- MODIFICATION START: Save settings on successful apply ---
                 PluginSettingsManager.SetString(SettingKeys.IfcLeaderLength, _ifcLeaderLengthTextBox.Text);
                 PluginSettingsManager.SetString(SettingKeys.IfcLeaderAngle, _ifcLeaderAngleTextBox.Text);
-                // --- MODIFICATION END ---
                 RhinoDoc.ActiveDoc?.Views.Redraw();
             }
         }
@@ -845,10 +917,8 @@ namespace MyProject
         {
             if (ValidateAndApplyConduitSettings(_materialLeaderLengthTextBox, _materialLeaderAngleTextBox, _materialDisplayConduit))
             {
-                // --- MODIFICATION START: Save settings on successful apply ---
                 PluginSettingsManager.SetString(SettingKeys.MaterialLeaderLength, _materialLeaderLengthTextBox.Text);
                 PluginSettingsManager.SetString(SettingKeys.MaterialLeaderAngle, _materialLeaderAngleTextBox.Text);
-                // --- MODIFICATION END ---
                 RhinoDoc.ActiveDoc?.Views.Redraw();
             }
         }
@@ -857,13 +927,11 @@ namespace MyProject
 
         #region Data Loading & Panel Updates
 
-        // --- NEW METHOD START ---
         /// <summary>
         /// Loads all panel settings from the persistent settings store and applies them to the UI controls.
         /// </summary>
         private void LoadSettings()
         {
-            // Load checkbox states
             _showAllObjectsCheckBox.Checked = PluginSettingsManager.GetBool(SettingKeys.ShowAllObjects, true);
             _showUnassignedCheckBox.Checked = PluginSettingsManager.GetBool(SettingKeys.ShowUnassigned, true);
             _groupByMaterialCheckBox.Checked = PluginSettingsManager.GetBool(SettingKeys.GroupByMaterial, false);
@@ -874,16 +942,13 @@ namespace MyProject
             _assignDefOnCreateCheckBox.Checked = PluginSettingsManager.GetBool(SettingKeys.AssignDefOnCreate, false);
             _assignCustomOnCreateCheckBox.Checked = PluginSettingsManager.GetBool(SettingKeys.AssignCustomOnCreate, false);
 
-            // Load leader settings from conduit properties which were initialized with saved values
             _ifcLeaderLengthTextBox.Text = _ifcClassDisplayConduit.LeaderLength.ToString();
             _ifcLeaderAngleTextBox.Text = _ifcClassDisplayConduit.LeaderAngle.ToString();
             _materialLeaderLengthTextBox.Text = _materialDisplayConduit.LeaderLength.ToString();
             _materialLeaderAngleTextBox.Text = _materialDisplayConduit.LeaderAngle.ToString();
 
-            // Load grid column visibility
             PluginSettingsManager.LoadColumnVisibility(_userTextGridView.Columns);
         }
-        // --- NEW METHOD END ---
 
         private void UpdatePanelDataSafe()
         {
@@ -1194,6 +1259,12 @@ namespace MyProject
 
             var selectedObjects = doc.Objects.GetSelectedObjects(false, false).ToList();
 
+            // --- MODIFICATION START: Control editability for both columns based on selection count ---
+            bool singleSelection = (selectedObjects.Count == 1);
+            _objectKeyColumn.Editable = singleSelection;
+            _objectValueColumn.Editable = singleSelection;
+            // --- MODIFICATION END ---
+
             int selectionCount = selectedObjects.Count;
             string objectText = selectionCount == 1 ? "Object" : "Objects";
             _selectedObjectAttributesHeaderLabel.Text = $"Selected Object(s) Attributes ({selectionCount} {objectText} Selected)";
@@ -1270,7 +1341,6 @@ namespace MyProject
         {
             if (disposing)
             {
-                // No need to unregister event handlers for settings as they are tied to the control's lifetime.
                 _ifcClassDisplayConduit.Enabled = false;
                 _materialDisplayConduit.Enabled = false;
             }
