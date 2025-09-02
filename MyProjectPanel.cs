@@ -7,7 +7,6 @@ using Rhino;
 using Rhino.Display;
 using Rhino.DocObjects;
 using Rhino.Geometry;
-using Rhino.UI.Controls;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -27,7 +26,7 @@ namespace MyProject
     public class MyProjectPanel : Panel
     {
         #region Constants
-        private const string MaterialKey = "STR_MATERIAL_PR";
+        private const string MaterialKey = "STR_MATERIAL";
         private const string IfcClassKey = "STR_IFC_CLASS";
         private const string QuantityMultiplierKey = "STR_MAT_PR_MULTIPLIER";
         private const string CustomAttributePrefix = "CUSTOM_";
@@ -46,10 +45,8 @@ namespace MyProject
         private readonly GridView<DocumentUserTextEntry> _docUserTextGridView = new GridView<DocumentUserTextEntry> { ShowHeader = true, Height = 100, Width = 450 };
         private readonly GridView<ObjectUserTextEntry> _objectUserTextGridView = new GridView<ObjectUserTextEntry> { ShowHeader = true, Height = 150, Width = 450 };
         private readonly GridColumn _qtyMultiplierColumn = new GridColumn { DataCell = new TextBoxCell(nameof(UserTextEntry.QuantityMultiplier)) { TextAlignment = TextAlignment.Right }, HeaderText = "Qty. Multiplier", Editable = true, Width = 90 };
-        // --- MODIFICATION START: Added fields for the object grid's columns to control their editable state ---
         private readonly GridColumn _objectKeyColumn = new GridColumn { HeaderText = "Key", DataCell = new TextBoxCell(nameof(ObjectUserTextEntry.Key)), Editable = false, Width = 150 };
         private readonly GridColumn _objectValueColumn = new GridColumn { HeaderText = "Value", DataCell = new TextBoxCell(nameof(ObjectUserTextEntry.Value)), Editable = false };
-        // --- MODIFICATION END ---
         private readonly Label _totalLcaLabel = new Label { Text = "Total LCA: 0.00" };
         private Label _selectedObjectAttributesHeaderLabel;
         private readonly ComboBox _ifcDropdown = new ComboBox { Width = 90, AutoComplete = true };
@@ -72,6 +69,12 @@ namespace MyProject
         private TextBox _materialLeaderLengthTextBox;
         private TextBox _materialLeaderAngleTextBox;
 
+        private TextBox _materialCsvPathTextBox;
+        private TextBox _ifcCsvPathTextBox;
+        // --- MODIFICATION START: Added TextBox for Custom CSV Path ---
+        private TextBox _customCsvPathTextBox;
+        // --- MODIFICATION END ---
+
         // Conduits
         private readonly AttributeDisplayConduit _ifcClassDisplayConduit;
         private readonly AttributeDisplayConduit _materialDisplayConduit;
@@ -81,9 +84,7 @@ namespace MyProject
         private bool _isSyncingSelection = false;
         private bool _needsRefresh = false;
         private bool _isMouseOverGrid = false;
-        // --- MODIFICATION START: Added field to store the original key before an edit ---
         private string _originalObjectKey;
-        // --- MODIFICATION END ---
 
         #endregion
 
@@ -94,7 +95,7 @@ namespace MyProject
             _ifcClassDisplayConduit = new AttributeDisplayConduit
             {
                 LeaderLength = int.Parse(PluginSettingsManager.GetString(SettingKeys.IfcLeaderLength, "5")),
-                LeaderAngle = int.Parse(PluginSettingsManager.GetString(SettingKeys.IfcLeaderAngle, "45"))
+                LeaderAngle = int.Parse(PluginSettingsManager.GetString(SettingKeys.IfcLeaderAngle, "35"))
             };
             _materialDisplayConduit = new AttributeDisplayConduit
             {
@@ -115,7 +116,6 @@ namespace MyProject
 
         #region UI Initialization
 
-
         private void InitializeLayout()
         {
             Styles.Add<Label>("bold_label", label =>
@@ -135,12 +135,12 @@ namespace MyProject
             mainLayout.Add(new Expander { Header = _selectedObjectAttributesHeaderLabel, Content = CreateObjectUserTextLayout(), Expanded = false, Visible = true });
             mainLayout.Add(new Expander { Header = new Label { Text = "Viewport Display", Style = "bold_label" }, Content = CreateDisplayOptionsLayout(), Expanded = false, Visible = false });
             mainLayout.Add(new Expander { Header = new Label { Text = "Document User Text", Style = "bold_label" }, Content = CreateDocumentUserTextLayout(), Expanded = false, Visible = false });
+            mainLayout.Add(new Expander { Header = new Label { Text = "Advanced Settings", Style = "bold_label" }, Content = CreateAdvancedSettingsLayout(), Expanded = false, Visible = true });
             mainLayout.Add(null, true);
 
             Content = new Scrollable { Content = mainLayout, Border = BorderType.None };
             MinimumSize = new Size(400, 450);
         }
-
 
         private Control CreateUtilityButtonsLayout()
         {
@@ -153,32 +153,20 @@ namespace MyProject
                 catch (Exception ex) { RhinoApp.WriteLine($"Error opening website: {ex.Message}"); }
             };
 
-            var refreshIcon = BytesToEtoBitmap(Resources.btn_refreshList256, new Size(18, 18));
-            var refreshListsButton = new Button
-            {
-                Image = refreshIcon,
-                Text = "Refresh List",
-                ImagePosition = ButtonImagePosition.Left,
-                ToolTip = "Refresh IFC Class, Material, and Custom Attribute lists from their sources."
-            };
-            refreshListsButton.Click += OnRefreshListsClick;
-
-            var exportButton = new Button { Text = "Export LCA Calculation", ToolTip = "Export the grid data to a CSV file." };
+            var exportButton = new Button { Text = "Export LCA Calculation", ToolTip = "Export the LCA table data to a CSV file." };
             exportButton.Click += OnExportToCsvClick;
 
-            var buttonLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { btnStructure, refreshListsButton, exportButton } };
+            var buttonLayout = new StackLayout { Orientation = Orientation.Horizontal, Spacing = 5, Items = { btnStructure, exportButton } };
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
             layout.AddRow(buttonLayout);
             return layout;
         }
-
 
         private Control CreateDefinitionLayout()
         {
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
 
             var selectIcon = BytesToEtoBitmap(Resources.btn_selectObjects256, new Size(18, 18));
-
             var selectIfcButton = new Button { Image = selectIcon, ToolTip = "Select objects matching the specified IfcClass.", MinimumSize = Size.Empty };
             selectIfcButton.Click += OnSelectByIfcClassClick;
             var assignIfcButton = new Button { Image = BytesToEtoBitmap(Resources.btn_assignIfcClass256, new Size(18, 18)), MinimumSize = Size.Empty, ImagePosition = ButtonImagePosition.Left };
@@ -207,7 +195,6 @@ namespace MyProject
             return layout;
         }
 
-
         private Control CreateCustomDefinitionLayout()
         {
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
@@ -234,7 +221,6 @@ namespace MyProject
 
             return layout;
         }
-
 
         private Control CreateAttributeGridLayout()
         {
@@ -274,20 +260,16 @@ namespace MyProject
             return layout;
         }
 
-
         private Control CreateObjectUserTextLayout()
         {
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
 
-            // --- MODIFICATION START: Use column fields to allow dynamic editing ---
             _objectUserTextGridView.Columns.Add(_objectKeyColumn);
             _objectUserTextGridView.Columns.Add(_objectValueColumn);
-            // --- MODIFICATION END ---
 
             layout.AddRow(new Scrollable { Content = _objectUserTextGridView });
             return layout;
         }
-
 
         private Control CreateDisplayOptionsLayout()
         {
@@ -323,7 +305,6 @@ namespace MyProject
             return layout;
         }
 
-
         private Control CreateDocumentUserTextLayout()
         {
             var layout = new DynamicLayout { Spacing = new Size(6, 6) };
@@ -339,10 +320,39 @@ namespace MyProject
             return layout;
         }
 
+        // --- MODIFICATION START: Reordered layout and added Custom Definition Path ---
+        private Control CreateAdvancedSettingsLayout()
+        {
+            var layout = new DynamicLayout { Spacing = new Size(6, 6) };
+
+            // Instantiate TextBoxes
+            _ifcCsvPathTextBox = new TextBox();
+            _materialCsvPathTextBox = new TextBox();
+            _customCsvPathTextBox = new TextBox();
+
+            var refreshIcon = BytesToEtoBitmap(Resources.btn_refreshList256, new Size(18, 18));
+            var saveButton = new Button
+            {
+                Text = "Save & Reload Lists",
+                Image = refreshIcon,
+                ImagePosition = ButtonImagePosition.Left
+            };
+            saveButton.Click += OnSaveAdvancedSettingsClick;
+
+            // Add rows in the new order
+            layout.AddRow(new Label { Text = "IFC Class CSV Path/URL:", VerticalAlignment = VerticalAlignment.Center }, _ifcCsvPathTextBox);
+            layout.AddRow(new Label { Text = "Material CSV Path/URL:", VerticalAlignment = VerticalAlignment.Center }, _materialCsvPathTextBox);
+            layout.AddRow(new Label { Text = "Custom Def. CSV Path/URL:", VerticalAlignment = VerticalAlignment.Center }, _customCsvPathTextBox);
+
+            layout.AddRow(null, saveButton);
+
+            return layout;
+        }
+        // --- MODIFICATION END ---
+
         #endregion
 
         #region Rhino & UI Event Handlers
-
 
         private void RegisterEventHandlers()
         {
@@ -399,16 +409,10 @@ namespace MyProject
             _userTextGridView.MouseEnter += (s, e) => _isMouseOverGrid = true;
             _userTextGridView.MouseLeave += (s, e) => _isMouseOverGrid = false;
 
-            // --- MODIFICATION START: Add event handlers for the object attributes grid editing ---
             _objectUserTextGridView.CellEditing += OnObjectGridCellEditing;
             _objectUserTextGridView.CellEdited += OnObjectGridCellEdited;
-            // --- MODIFICATION END ---
         }
 
-        // --- NEW METHOD START ---
-        /// <summary>
-        /// Stores the original key of an object's user text before the user begins editing it in the grid.
-        /// </summary>
         private void OnObjectGridCellEditing(object sender, GridViewCellEventArgs e)
         {
             if (e.Item is ObjectUserTextEntry entry)
@@ -420,12 +424,7 @@ namespace MyProject
                 _originalObjectKey = null;
             }
         }
-        // --- NEW METHOD END ---
 
-        /// <summary>
-        /// Handles the cell edited event for the selected object's user text grid.
-        /// Saves the new key and/or value to the object's user text.
-        /// </summary>
         private void OnObjectGridCellEdited(object sender, GridViewCellEventArgs e)
         {
             var doc = RhinoDoc.ActiveDoc;
@@ -441,10 +440,8 @@ namespace MyProject
             {
                 var newAttributes = rhinoObject.Attributes.Duplicate();
 
-                // First, delete the old entry using the stored original key
                 newAttributes.DeleteUserString(_originalObjectKey);
 
-                // Then, set the new entry. This handles both key and value changes seamlessly.
                 if (newAttributes.SetUserString(entry.Key, entry.Value))
                 {
                     doc.Objects.ModifyAttributes(rhinoObject.Id, newAttributes, false);
@@ -452,7 +449,6 @@ namespace MyProject
                 }
             }
 
-            // Clear the stored key after the operation is complete
             _originalObjectKey = null;
         }
 
@@ -540,10 +536,6 @@ namespace MyProject
             }
         }
 
-        /// <summary>
-        /// Handles the click event for the unified refresh button.
-        /// Reloads all external data lists (IFC, Material, Custom).
-        /// </summary>
         private void OnRefreshListsClick(object sender, EventArgs e)
         {
             RhinoApp.WriteLine("Refreshing IFC, Material, and Custom Attribute lists...");
@@ -552,6 +544,17 @@ namespace MyProject
             ReloadCustomAttributeList();
             RhinoApp.WriteLine("Lists refreshed successfully.");
         }
+
+        // --- MODIFICATION START: Added saving for Custom CSV Path ---
+        private void OnSaveAdvancedSettingsClick(object sender, EventArgs e)
+        {
+            PluginSettingsManager.SetString(SettingKeys.IfcClassCsvPath, _ifcCsvPathTextBox.Text);
+            PluginSettingsManager.SetString(SettingKeys.MaterialCsvPath, _materialCsvPathTextBox.Text);
+            PluginSettingsManager.SetString(SettingKeys.CustomCsvPath, _customCsvPathTextBox.Text);
+            RhinoApp.WriteLine("Advanced settings saved.");
+            OnRefreshListsClick(sender, e);
+        }
+        // --- MODIFICATION END ---
 
         private void OnExportToCsvClick(object sender, EventArgs e)
         {
@@ -927,9 +930,7 @@ namespace MyProject
 
         #region Data Loading & Panel Updates
 
-        /// <summary>
-        /// Loads all panel settings from the persistent settings store and applies them to the UI controls.
-        /// </summary>
+        // --- MODIFICATION START: Added loading for Custom CSV Path ---
         private void LoadSettings()
         {
             _showAllObjectsCheckBox.Checked = PluginSettingsManager.GetBool(SettingKeys.ShowAllObjects, true);
@@ -947,8 +948,13 @@ namespace MyProject
             _materialLeaderLengthTextBox.Text = _materialDisplayConduit.LeaderLength.ToString();
             _materialLeaderAngleTextBox.Text = _materialDisplayConduit.LeaderAngle.ToString();
 
+            _ifcCsvPathTextBox.Text = PluginSettingsManager.GetString(SettingKeys.IfcClassCsvPath, string.Empty);
+            _materialCsvPathTextBox.Text = PluginSettingsManager.GetString(SettingKeys.MaterialCsvPath, string.Empty);
+            _customCsvPathTextBox.Text = PluginSettingsManager.GetString(SettingKeys.CustomCsvPath, string.Empty);
+
             PluginSettingsManager.LoadColumnVisibility(_userTextGridView.Columns);
         }
+        // --- MODIFICATION END ---
 
         private void UpdatePanelDataSafe()
         {
@@ -1136,12 +1142,17 @@ namespace MyProject
             PopulateMaterialDropdown();
             UpdatePanelData();
         }
+
+        // --- MODIFICATION START: Use dynamic loader for Custom Attributes ---
         private void ReloadCustomAttributeList()
         {
-            CsvReader.ReadCustomAttributeListsFromResource("MyProject.Resources.Data.customAttribute.csv", out _customAttributeKeys, out _customAttributeValues);
+            var doc = RhinoDoc.ActiveDoc;
+            CsvReader.ReadCustomAttributeListsDynamic(doc, out _customAttributeKeys, out _customAttributeValues);
             PopulateCustomKeyDropdown();
             PopulateCustomValueDropdown();
         }
+        // --- MODIFICATION END ---
+
         private void PopulateCustomKeyDropdown()
         {
             _customKeyDropdown.Items.Clear();
@@ -1259,11 +1270,9 @@ namespace MyProject
 
             var selectedObjects = doc.Objects.GetSelectedObjects(false, false).ToList();
 
-            // --- MODIFICATION START: Control editability for both columns based on selection count ---
             bool singleSelection = (selectedObjects.Count == 1);
             _objectKeyColumn.Editable = singleSelection;
             _objectValueColumn.Editable = singleSelection;
-            // --- MODIFICATION END ---
 
             int selectionCount = selectedObjects.Count;
             string objectText = selectionCount == 1 ? "Object" : "Objects";

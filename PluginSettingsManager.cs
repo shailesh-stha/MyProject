@@ -30,9 +30,7 @@ namespace MyProject
         /// </summary>
         /// <param name="key">The setting key.</param>
         /// <param name="value">The boolean value to save.</param>
-        // --- MODIFICATION START: Corrected the method signature from "voidSetBool" to "void SetBool" ---
         public static void SetBool(string key, bool value)
-        // --- MODIFICATION END ---
         {
             MyProjectPlugin.Instance.Settings.SetBool(key, value);
         }
@@ -67,7 +65,6 @@ namespace MyProject
             if (columns == null) return;
             foreach (var column in columns)
             {
-                // Create a unique key for each column based on its header text.
                 var key = $"{GridColumnVisibilityPrefix}{column.HeaderText}";
                 SetBool(key, column.Visible);
             }
@@ -83,7 +80,6 @@ namespace MyProject
             foreach (var column in columns)
             {
                 var key = $"{GridColumnVisibilityPrefix}{column.HeaderText}";
-                // The default for a new column that hasn't been saved is 'true' (visible).
                 column.Visible = GetBool(key, true);
             }
         }
@@ -108,5 +104,8 @@ namespace MyProject
         public const string IfcLeaderAngle = "IfcLeaderAngle";
         public const string MaterialLeaderLength = "MaterialLeaderLength";
         public const string MaterialLeaderAngle = "MaterialLeaderAngle";
+        public const string MaterialCsvPath = "MaterialCsvPath";
+        public const string IfcClassCsvPath = "IfcClassCsvPath";
+        public const string CustomCsvPath = "CustomCsvPath";
     }
 }
