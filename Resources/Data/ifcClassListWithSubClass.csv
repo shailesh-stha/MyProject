@@ -1,12 +1,13 @@
-Column,Type1
-Column,Type2
-Column,Type3
-Beam,Type1
-Beam,Type2
-Beam,Type3
-Slab,Type1
-Slab,Type2
-Slab,Type3
-Foundation,Type1
-Foundation,Type2
-Foundation,Type3
+ElementName,ElementType
+Column,C-1 (Square)
+Column,C-2 (Circular)
+Column,C-3 (Steel)
+Beam,B-1 (Primary)
+Beam,B-2 (Secondary)
+Beam,B-3 (Steel)
+Slab,S-1 (Floor)
+Slab,S-2 (Roof)
+Slab,S-3 (Balcony)
+Foundation,F-1 (Isolated)
+Foundation,F-2 (Strip)
+Foundation,F-3 (Mat)

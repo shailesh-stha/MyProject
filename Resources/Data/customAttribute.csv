@@ -1,6 +1,10 @@
-Attribute_Key, Attribute_Value
-Attr_1,Val_1
-Attr_1,Val_2
-Attr_1,Val_3
-Attr_2,Val_1
-Attr_3,Val_1
+AttributeKey,AttributeValue
+Color,Red
+Color,Blue
+Size,Large
+Size,Medium
+Size,Small
+Status,Active
+Status,Inactive
+Priority,High
+Priority,Low
