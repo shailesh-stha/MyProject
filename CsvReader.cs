@@ -108,6 +108,7 @@ namespace MyProject
         // Tiered loading logic for each data type
         private static (List<string> keys, List<string> values)? TryLoadCustomDataFromPath(string path)
         {
+            if (string.IsNullOrWhiteSpace(path)) return null;
             try
             {
                 string csvContent = Task.Run(async () => await GetContentFromUrlOrFile(path)).GetAwaiter().GetResult();
@@ -123,13 +124,14 @@ namespace MyProject
             }
             catch (Exception ex)
             {
-                RhinoApp.WriteLine($"Error loading from path '{path}'. Details: {ex.Message}");
+                RhinoApp.WriteLine($"Failed to load from path '{path}'. Error: {ex.Message}");
             }
             return null;
         }
 
         private static List<MaterialData> TryLoadMaterialDataFromPath(string path)
         {
+            if (string.IsNullOrWhiteSpace(path)) return null;
             try
             {
                 string csvContent = Task.Run(async () => await GetContentFromUrlOrFile(path)).GetAwaiter().GetResult();
@@ -145,13 +147,14 @@ namespace MyProject
             }
             catch (Exception ex)
             {
-                RhinoApp.WriteLine($"Error loading from path '{path}'. Details: {ex.Message}");
+                RhinoApp.WriteLine($"Failed to load from path '{path}'. Error: {ex.Message}");
             }
             return null;
         }
 
         private static Dictionary<string, List<string>> TryLoadIfcDataFromPath(string path)
         {
+            if (string.IsNullOrWhiteSpace(path)) return null;
             try
             {
                 string csvContent = Task.Run(async () => await GetContentFromUrlOrFile(path)).GetAwaiter().GetResult();
@@ -167,7 +170,7 @@ namespace MyProject
             }
             catch (Exception ex)
             {
-                RhinoApp.WriteLine($"Error loading from path '{path}'. Details: {ex.Message}");
+                RhinoApp.WriteLine($"Failed to load from path '{path}'. Error: {ex.Message}");
             }
             return null;
         }
@@ -175,46 +178,78 @@ namespace MyProject
         // Public methods for dynamic loading
         public static void ReadCustomAttributeListsDynamic(RhinoDoc doc, out List<string> keys, out List<string> values)
         {
-            // Tiered priority for loading
             var docPath = doc?.Strings.GetValue("STR_CUSTOM_CSV_URL");
-            var globalPath = PluginSettingsManager.GetString(SettingKeys.CustomCsvPath, string.Empty);
-            var resourceName = "MyProject.Resources.Data.customAttribute.csv";
-
-            var customData = TryLoadCustomDataFromPath(docPath) ?? TryLoadCustomDataFromPath(globalPath);
-            if (customData.HasValue)
+            if (!string.IsNullOrWhiteSpace(docPath))
             {
-                keys = customData.Value.keys;
-                values = customData.Value.values;
-                return;
+                RhinoApp.WriteLine($"Attempting to load Custom Definitions from document path: {docPath}");
+                var result = TryLoadCustomDataFromPath(docPath);
+                if (result.HasValue)
+                {
+                    keys = result.Value.keys;
+                    values = result.Value.values;
+                    return;
+                }
             }
+
+            var globalPath = PluginSettingsManager.GetString(SettingKeys.CustomCsvPath, string.Empty);
+            if (!string.IsNullOrWhiteSpace(globalPath))
+            {
+                RhinoApp.WriteLine($"Attempting to load Custom Definitions from global settings path: {globalPath}");
+                var result = TryLoadCustomDataFromPath(globalPath);
+                if (result.HasValue)
+                {
+                    keys = result.Value.keys;
+                    values = result.Value.values;
+                    return;
+                }
+            }
+
             RhinoApp.WriteLine("Loading Custom Definitions from default embedded resource.");
-            ReadCustomAttributeListsFromResource(resourceName, out keys, out values);
+            ReadCustomAttributeListsFromResource("MyProject.Resources.Data.customAttribute.csv", out keys, out values);
         }
 
         public static List<MaterialData> ReadMaterialLcaDataDynamic(RhinoDoc doc)
         {
-            // Tiered priority for loading
             var docPath = doc?.Strings.GetValue("STR_MATERIAL_CSV_URL");
-            var globalPath = PluginSettingsManager.GetString(SettingKeys.MaterialCsvPath, string.Empty);
-            var resourceName = "MyProject.Resources.Data.materialListWithUnits.csv";
+            if (!string.IsNullOrWhiteSpace(docPath))
+            {
+                RhinoApp.WriteLine($"Attempting to load Material LCA data from document path: {docPath}");
+                var materialList = TryLoadMaterialDataFromPath(docPath);
+                if (materialList != null) return materialList;
+            }
 
-            var materialList = TryLoadMaterialDataFromPath(docPath) ?? TryLoadMaterialDataFromPath(globalPath);
-            if (materialList != null) return materialList;
+            var globalPath = PluginSettingsManager.GetString(SettingKeys.MaterialCsvPath, string.Empty);
+            if (!string.IsNullOrWhiteSpace(globalPath))
+            {
+                RhinoApp.WriteLine($"Attempting to load Material LCA data from global settings path: {globalPath}");
+                var materialList = TryLoadMaterialDataFromPath(globalPath);
+                if (materialList != null) return materialList;
+            }
+
             RhinoApp.WriteLine("Loading Material LCA data from default embedded resource.");
-            return ReadMaterialLcaDataFromResource(resourceName);
+            return ReadMaterialLcaDataFromResource("MyProject.Resources.Data.materialListWithUnits.csv");
         }
 
         public static Dictionary<string, List<string>> ReadIfcClassesDynamic(RhinoDoc doc)
         {
-            // Tiered priority for loading
             var docPath = doc?.Strings.GetValue("STR_IFC_CLASS_CSV_URL");
-            var globalPath = PluginSettingsManager.GetString(SettingKeys.IfcClassCsvPath, string.Empty);
-            var resourceName = "MyProject.Resources.Data.ifcClassListWithSubClass.csv";
+            if (!string.IsNullOrWhiteSpace(docPath))
+            {
+                RhinoApp.WriteLine($"Attempting to load IFC classes from document path: {docPath}");
+                var ifcDict = TryLoadIfcDataFromPath(docPath);
+                if (ifcDict != null) return ifcDict;
+            }
 
-            var ifcDict = TryLoadIfcDataFromPath(docPath) ?? TryLoadIfcDataFromPath(globalPath);
-            if (ifcDict != null) return ifcDict;
+            var globalPath = PluginSettingsManager.GetString(SettingKeys.IfcClassCsvPath, string.Empty);
+            if (!string.IsNullOrWhiteSpace(globalPath))
+            {
+                RhinoApp.WriteLine($"Attempting to load IFC classes from global settings path: {globalPath}");
+                var ifcDict = TryLoadIfcDataFromPath(globalPath);
+                if (ifcDict != null) return ifcDict;
+            }
+
             RhinoApp.WriteLine("Loading IFC classes from default embedded resource.");
-            return ReadIfcClassesFromResource(resourceName);
+            return ReadIfcClassesFromResource("MyProject.Resources.Data.ifcClassListWithSubClass.csv");
         }
 
         // Public methods for resource loading (kept as fallback)
